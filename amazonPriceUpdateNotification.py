@@ -115,7 +115,9 @@ def updateWishList(newItems):
 
         elif item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
             item["history"]["price"].insert(0, item["price"])
+            item["history"]["price"] = item["history"]["price"][0:4]
             item["history"]["priceUsed"].insert(0, item["priceUsed"])
+            item["history"]["priceUsed"] = item["history"]["priceUsed"][0:4]
             item["price"] = newItem["price"]
             item["priceUsed"] = newItem["priceUsed"]
 
@@ -176,10 +178,10 @@ def notifyUpdates(items):
 
 
 def get_subject(items):
-    subject = f"Price update ({len(items)})"
-    for item in items:
-        subject = f"{subject}  {item['title'][5]}...({item['priceUsed']}), "
-    return subject
+    numItems = len(items)
+    item = items[0]
+
+    return f"Wishlist({numItems}): {item['title'][0:12]}...({item['price']}/{item['priceUsed']})"
 
 
 def browse_and_scrape(urls):

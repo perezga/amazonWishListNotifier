@@ -5,7 +5,6 @@ from email.mime.text import MIMEText
 from jproperties import Properties
 import locale
 
-
 import requests
 from bs4 import BeautifulSoup
 
@@ -16,6 +15,17 @@ import sched, time
 wish_list = {}
 locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
 
+configs: Properties = Properties()
+with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
+    configs.load(config_file)
+
+wishlistURLs = configs.get("wishlist.urls").data.split(",")
+host = configs.get("email.host").data
+port = configs.get("email.port").data
+username = configs.get("email.username").data
+password = configs.get("email.password").data
+emailFrom =  configs.get("email.from").data
+emailTo = configs.get("email.to").data
 
 def clean_up_wishlist():
     print("Wishlist cleanup process started...")
@@ -173,12 +183,9 @@ def notifyUpdates(items):
         msg = MIMEText(text, text_type, 'utf-8')
 
         msg['Subject'] = get_subject(items)
-        msg['From'] = configs.get("email.from").data
-        msg['To'] = configs.get("email.to").data
-        host = configs.get("email.host").data
-        port = configs.get("email.port").data
-        username = configs.get("email.username").data
-        password = configs.get("email.password").data
+        msg['From'] = emailFrom
+        msg['To'] = emailTo
+
         server = smtplib.SMTP_SSL(host, port)
         server.login(username, password)
         server.send_message(msg)
@@ -225,12 +232,6 @@ def scrapeURLs(urls):
 
 
 if __name__ == "__main__":
-
-    configs: Properties = Properties()
-    with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
-        configs.load(config_file)
-
-    wishlistURLs = configs.get("wishlist.urls").data.split(",")
 
     s = sched.scheduler(time.time, time.sleep)
     s.enter(60, 1, clean_up_wishlist)

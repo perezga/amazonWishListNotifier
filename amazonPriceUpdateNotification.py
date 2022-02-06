@@ -3,6 +3,8 @@ import time
 from datetime import datetime
 from email.mime.text import MIMEText
 from jproperties import Properties
+import locale
+
 
 import requests
 from bs4 import BeautifulSoup
@@ -12,6 +14,7 @@ from datetime import datetime
 import sched, time
 
 wish_list = {}
+locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
 
 
 def clean_up_wishlist():
@@ -29,15 +32,14 @@ def findTitle(item):
 
 
 def findPrice(item):
-    price = item["data-price"]
-
-    return f"{price} €" if price is not None and price != "-Infinity" else "N/A"
+    priceWhole = item.find("span", class_="a-price-whole")
+    priceFraction = item.find("span", class_="a-price-fraction")
+    return float(f"{locale.atof(f'{priceWhole.text}{priceFraction.text}')}") if priceWhole else None
 
 
 def findPriceUsed(item):
     priceUsed = item.find("span", class_="a-color-price itemUsedAndNewPrice")
-
-    return priceUsed.text.strip() if priceUsed is not None else None
+    return locale.atof(f'{priceUsed.text.strip()}'.split()[0]) if priceUsed else None
 
 
 def findId(item):
@@ -74,11 +76,17 @@ def findItem(items, wishItemId):
 def buildBody(items):
     body = "The following items have updated prices\n\n"
     for item in items:
+        title = item["title"]
+        price = item["price"]
+        priceOld = item["history"]["price"]
+        priceUsed = item["priceUsed"]
+        priceUsedOld = item["history"]["priceUsed"]
         body += '***********************************\n'
-        body += f'{item["title"]}\n\n'
-
-        body += f'Price: {item["price"] if item["price"] else "N/A"}  -> {item["history"]["price"]}\n'
-        body += f'Price used {item["priceUsed"] if item["priceUsed"] else "N/A"}  -> {item["history"]["priceUsed"]}\n\n'
+        body += f'{title}\n\n'
+        body += f'Price: {locale.currency(price, grouping=True) if price else "N/A"}  -> ' \
+                f'{locale.currency(priceOld, grouping=True) if priceOld else "N/A"}\n'
+        body += f'Price used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}  -> ' \
+                f'{locale.currency(priceUsedOld, grouping=True) if priceUsedOld else "N/A"}\n\n'
 
     return body
 
@@ -106,11 +114,11 @@ def scrapeURL(soup):
 def updateWishList(newItems):
     updatedItems = []
     for newItem in newItems:
-
-        item = wish_list.get(newItem["id"])
+        itemId = newItem["id"]
+        item = wish_list.get(itemId)
 
         if item is None:
-            wish_list[newItem["id"]] = newItem
+            wish_list[itemId] = newItem
             updatedItems.append(newItem)
 
         elif item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
@@ -180,8 +188,11 @@ def notifyUpdates(items):
 def get_subject(items):
     numItems = len(items)
     item = items[0]
+    title = item['title'][0:10]
+    price = locale.currency(item['price'], grouping=True) if item['price'] else "N/A"
+    priceUsed = locale.currency(item['priceUsed'], grouping=True) if item['priceUsed'] else "N/A"
 
-    return f"Wishlist({numItems}): {item['title'][0:12]}...({item['price']}/{item['priceUsed']})"
+    return f"Wishlist({numItems}): {title}...({price}/{priceUsed})"
 
 
 def browse_and_scrape(urls):
@@ -225,5 +236,9 @@ if __name__ == "__main__":
     s.enter(60, 1, clean_up_wishlist)
 
     while True:
-        browse_and_scrape(wishlistURLs)
+        try:
+            browse_and_scrape(wishlistURLs)
+        except Exception as inst:
+            print(inst)
+
         time.sleep(30)

@@ -44,7 +44,7 @@ def findTitle(item):
 def findPrice(item):
     priceWhole = item.find("span", class_="a-price-whole")
     priceFraction = item.find("span", class_="a-price-fraction")
-    return float(f"{locale.atof(f'{priceWhole.text}{priceFraction.text}')}") if priceWhole else None
+    return locale.atof(f'{priceWhole.text}{priceFraction.text}') if priceWhole else None
 
 
 def findPriceUsed(item):
@@ -87,17 +87,18 @@ def buildBody(items):
     body = "The following items have updated prices\n\n"
     for item in items:
         title = item["title"]
+        savings = item["savings"]
         price = item["price"]
         priceOld = item["history"]["price"]
         priceUsed = item["priceUsed"]
         priceUsedOld = item["history"]["priceUsed"]
         body += '***********************************\n'
         body += f'{title}\n\n'
-        body += f'Price: {locale.currency(price, grouping=True) if price else "N/A"}  -> ' \
-                f'{locale.currency(priceOld, grouping=True) if priceOld else "N/A"}\n'
-        body += f'Price used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}  -> ' \
-                f'{locale.currency(priceUsedOld, grouping=True) if priceUsedOld else "N/A"}\n\n'
-
+        body += f'Savings: {savings}%\n' if savings else "-"
+        body += f'Price: {locale.currency(price, grouping=True) if price else "N/A"} \t -> ' \
+                f'{locale.currency(priceOld[0], grouping=True) if len(priceOld) > 0 else "N/A"}\n'
+        body += f'Price used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"} \t -> ' \
+                f'{locale.currency(priceUsedOld[0], grouping=True) if len(priceUsedOld) > 0 else "N/A"}\n\n'
     return body
 
 
@@ -106,18 +107,19 @@ def scrapeURL(soup):
     scrappedItems = []
     items = soup.find_all(attrs={"data-itemid": True})
     for item in items:
+        price = findPrice(item)
+        priceUsed = findPriceUsed(item)
         scrappedItem = {
             "id": findId(item),
             "title": findTitle(item),
-            "price": findPrice(item),
-            "priceUsed": findPriceUsed(item),
-            "history": {"price": [],
-                        "priceUsed": []
-                        }
+            "price": price,
+            "priceUsed": priceUsed,
+            "history": {"price": [], "priceUsed": []},
+            "savings": float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0)
         }
 
         scrappedItems.append(scrappedItem)
-
+        
     return scrappedItems
 
 
@@ -196,23 +198,39 @@ def get_subject(items):
     numItems = len(items)
     item = items[0]
     title = item['title'][0:10]
-    price = locale.currency(item['price'], grouping=True) if item['price'] else "N/A"
-    priceUsed = locale.currency(item['priceUsed'], grouping=True) if item['priceUsed'] else "N/A"
+    price = item['price']
+    priceLocale = locale.currency(price, grouping=True) if price else "N/A"
+    priceUsed = item['priceUsed']
+    priceUsedLocale = locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"
 
-    return f"Wishlist({numItems}): {title}...({price}/{priceUsed})"
+    return f"Wishlist({numItems}): {title}...({priceLocale}/{priceUsedLocale})"
 
+def printItems(items):
+    for item in items:
+        savings = item["savings"]
+        print(f"{item['title'][0:60]:60} \t price: {item['price']} \t used: {item['priceUsed']} \t savings: {savings if savings else '-'}{'%' if savings else '      '} \t priceHistory: {item['history']['price']} \t priceUsedHistory: {item['history']['priceUsed']}")
+    	
+def printItemsTitles(items):
+    for item in items:
+    	print(f"{item['title'][0:60]:60}")
 
 def browse_and_scrape(urls):
+    dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
     scrappedItems = scrapeURLs(urls)
-    print(f"Number of items scrapped {len(scrappedItems)}")
+    #print(f"{dt_string} Number of items scrapped {len(scrappedItems)}")
 
+    scrappedItems = sorted(scrappedItems, key=lambda x: x["savings"], reverse=True)
+    
     updatedItems = updateWishList(scrappedItems)
-    print(f"Updated items ({len(updatedItems)}) {updatedItems}")
+    if len(updatedItems) > 0:
+        print(f"{dt_string} ********************************************** {len(updatedItems)} ITEMS UPDATED ************************")
+        printItems(updatedItems)
 
     filteredItems = filterUpdates(updatedItems)
-    print(f"Items to notify ({len(filteredItems)}) {filteredItems}")
-
-    if filteredItems:
+    if len(filteredItems) > 0:
+        print(f"{dt_string} ********************************************** {len(filteredItems)} ITEMS NOTIFIED **********************")
+        printItemsTitles(filteredItems)
         notifyUpdates(filteredItems)
 
 
@@ -221,7 +239,7 @@ def scrapeURLs(urls):
     scrappedItems = []
 
     for url in urls:
-        print(f"{dt_string} Scraping - {url}")
+        #print(f"{dt_string} Scraping - {url}")
 
         html_text = requests.get(url).text
         soup = BeautifulSoup(html_text, "html.parser")

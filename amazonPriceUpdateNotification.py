@@ -140,7 +140,9 @@ def updateWishList(newItems):
             item["history"]["priceUsed"] = item["history"]["priceUsed"][0:4]
             item["price"] = newItem["price"]
             item["priceUsed"] = newItem["priceUsed"]
-
+            price = item["price"]
+            priceUsed = item["priceUsed"]
+            item["savings"] = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0)
             updatedItems.append(item)
 
     return updatedItems

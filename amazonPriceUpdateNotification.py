@@ -86,19 +86,14 @@ def findItem(items, wishItemId):
 def buildBody(items):
     body = "The following items have updated prices\n\n"
     for item in items:
-        title = item["title"]
-        savings = item["savings"]
+        title = item["title"][0:40]
+        savings = f"{item['savings']}".rjust(6)
         price = item["price"]
         priceOld = item["history"]["price"]
         priceUsed = item["priceUsed"]
         priceUsedOld = item["history"]["priceUsed"]
         body += '***********************************\n'
-        body += f'{title}\n\n'
-        body += f'Savings: {savings}%\n' if savings else "-"
-        body += f'Price: {locale.currency(price, grouping=True) if price else "N/A"} \t -> ' \
-                f'{locale.currency(priceOld[0], grouping=True) if len(priceOld) > 0 else "N/A"}\n'
-        body += f'Price used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"} \t -> ' \
-                f'{locale.currency(priceUsedOld[0], grouping=True) if len(priceUsedOld) > 0 else "N/A"}\n\n'
+        body += f'{title}\nsavings: {savings} % \t price: {locale.currency(price, grouping=True) if price else "N/A"} \t used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}\n'
     return body
 
 
@@ -140,9 +135,7 @@ def updateWishList(newItems):
             item["history"]["priceUsed"] = item["history"]["priceUsed"][0:4]
             item["price"] = newItem["price"]
             item["priceUsed"] = newItem["priceUsed"]
-            price = item["price"]
-            priceUsed = item["priceUsed"]
-            item["savings"] = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0)
+            item["savings"] = newItem["savings"]
             updatedItems.append(item)
 
     return updatedItems
@@ -209,8 +202,10 @@ def get_subject(items):
 
 def printItems(items):
     for item in items:
-        savings = item["savings"]
-        print(f"{item['title'][0:60]:60} \t price: {item['price']} \t used: {item['priceUsed']} \t savings: {savings if savings else '-'}{'%' if savings else '      '} \t priceHistory: {item['history']['price']} \t priceUsedHistory: {item['history']['priceUsed']}")
+        savings = f"{item['savings']}".rjust(6)
+        price = f"{item['price']}".rjust(7)
+        used = f"{item['priceUsed']}".rjust(7)
+        print(f"{item['title'][0:60]:60} \t savings: {savings}% \t price: {price} \t used: {used} \t priceHistory: {item['history']['price']} \t priceUsedHistory: {item['history']['priceUsed']}")
     	
 def printItemsTitles(items):
     for item in items:

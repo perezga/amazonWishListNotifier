@@ -19,6 +19,7 @@ configs: Properties = Properties()
 with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
     configs.load(config_file)
 
+#Add as many comma separated wish lists as you desire
 wishlistURLs = configs.get("wishlist.urls").data.split(",")
 host = configs.get("email.host").data
 port = configs.get("email.port").data
@@ -26,6 +27,9 @@ username = configs.get("email.username").data
 password = configs.get("email.password").data
 emailFrom =  configs.get("email.from").data
 emailTo = configs.get("email.to").data
+
+#Minimum savings percentage between normal price and Used price.Used to notify only when that condition meets.
+minSavingsPercentage = float(configs.get("notification.savings.percentage").data)
 
 def clean_up_wishlist():
     print("Wishlist cleanup process started...")
@@ -130,9 +134,9 @@ def updateWishList(newItems):
 
         elif item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
             item["history"]["price"].insert(0, item["price"])
-            item["history"]["price"] = item["history"]["price"][0:4]
+            item["history"]["price"] = item["history"]["price"][0:2]
             item["history"]["priceUsed"].insert(0, item["priceUsed"])
-            item["history"]["priceUsed"] = item["history"]["priceUsed"][0:4]
+            item["history"]["priceUsed"] = item["history"]["priceUsed"][0:2]
             item["price"] = newItem["price"]
             item["priceUsed"] = newItem["priceUsed"]
             item["savings"] = newItem["savings"]
@@ -142,13 +146,6 @@ def updateWishList(newItems):
 
 
 def filterUpdates(items):
-    filteredItems = only_if_smaller_price_strategy(items)
-    # filteredItems = otherStrategy(filteredItems)
-
-    return filteredItems
-
-
-def only_if_smaller_price_strategy(items):
     filteredItems = []
     for item in items:
         priceUsedNew = item["priceUsed"]
@@ -156,13 +153,17 @@ def only_if_smaller_price_strategy(items):
         priceNew = item["price"]
         priceOld = item["history"]["price"][0] if len(item["history"]["price"]) > 0 else None
 
-        if isSmallerPrice(priceUsedNew, priceUsedOld) or isSmallerPrice(priceNew, priceOld):
+        #if isSmallerPriceStrategy(priceUsedNew, priceUsedOld) or isSmallerPrice(priceNew, priceOld):
+        if isSavingsGreaterThanStrategy(priceNew, priceUsedNew, minSavingsPercentage):        
             filteredItems.append(item)
+            printItem(item, True)
+        else:
+            printItem(item, False)
 
     return filteredItems
 
-
-def isSmallerPrice(priceUsedNew, priceUsedOld):
+# True if PriceUsed is not set or when any of New or Old prices is smaller than its previous value.
+def isSmallerPriceStrategy(priceUsedNew, priceUsedOld):
     if priceUsedNew and priceUsedOld:
         if priceUsedOld > priceUsedNew:
             return True
@@ -170,6 +171,16 @@ def isSmallerPrice(priceUsedNew, priceUsedOld):
         return True
     else:
         return False
+
+# True only if Used price is X percent smaller than the normal price.
+#Where X is minSavingsPercentage
+def isSavingsGreaterThanStrategy(price, priceUsed, minSavingsPercentage):
+    if price and priceUsed:
+        if price > priceUsed:
+            return True if (price - (minSavingsPercentage * price)) > priceUsed else False 
+    else:
+        return False
+
 
 
 def notifyUpdates(items):
@@ -202,10 +213,14 @@ def get_subject(items):
 
 def printItems(items):
     for item in items:
-        savings = f"{item['savings']}".rjust(6)
-        price = f"{item['price']}".rjust(7)
-        used = f"{item['priceUsed']}".rjust(7)
-        print(f"{item['title'][0:60]:60} \t savings: {savings}% \t price: {price} \t used: {used} \t priceHistory: {item['history']['price']} \t priceUsedHistory: {item['history']['priceUsed']}")
+        printItem(item, False)
+        
+def printItem(item, isSent):
+    savings = f"{item['savings']}".rjust(6)
+    price = f"{item['price']}".rjust(7)
+    used = f"{item['priceUsed']}".rjust(7)
+    dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    print(f"{dt_string} {'NOTIFIED' if isSent else '        '} {item['title'][0:60]:60} \t savings: {savings}% \t price: {price} \t used: {used} \t priceHistory: {item['history']['price']} \t priceUsedHistory: {item['history']['priceUsed']}")
     	
 def printItemsTitles(items):
     for item in items:
@@ -220,16 +235,9 @@ def browse_and_scrape(urls):
     scrappedItems = sorted(scrappedItems, key=lambda x: x["savings"], reverse=True)
     
     updatedItems = updateWishList(scrappedItems)
-    if len(updatedItems) > 0:
-        print(f"{dt_string} ********************************************** {len(updatedItems)} ITEMS UPDATED ************************")
-        printItems(updatedItems)
-
     filteredItems = filterUpdates(updatedItems)
     if len(filteredItems) > 0:
-        print(f"{dt_string} ********************************************** {len(filteredItems)} ITEMS NOTIFIED **********************")
-        printItemsTitles(filteredItems)
         notifyUpdates(filteredItems)
-
 
 def scrapeURLs(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")

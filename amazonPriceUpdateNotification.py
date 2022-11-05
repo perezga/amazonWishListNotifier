@@ -21,6 +21,14 @@ with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
 
 #Add as many comma separated wish lists as you desire
 wishlistURLs = configs.get("wishlist.urls").data.split(",")
+
+notification_method = configs.get("notification_method").data
+
+#telegram
+TOKEN = configs.get("telegram.token").data
+chat_id = configs.get("telegram.chatid").data
+
+#Email
 host = configs.get("email.host").data
 port = configs.get("email.port").data
 username = configs.get("email.username").data
@@ -88,7 +96,8 @@ def findItem(items, wishItemId):
 
 
 def buildBody(items):
-    body = "The following items have updated prices\n\n"
+    #body = "The following items have updated prices\n\n"
+    body = ''
     for item in items:
         title = item["title"][0:40]
         savings = f"{item['savings']}".rjust(6)
@@ -96,8 +105,9 @@ def buildBody(items):
         priceOld = item["history"]["price"]
         priceUsed = item["priceUsed"]
         priceUsedOld = item["history"]["priceUsed"]
-        body += '***********************************\n'
-        body += f'{title}\nsavings: {savings} % \t price: {locale.currency(price, grouping=True) if price else "N/A"} \t used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}\n'
+        bestUsedPrice = item['bestUsedPrice']
+        #body += '***********************************\n'
+        body += f'{title}\nsavings: {savings} % \t price: {locale.currency(price, grouping=True) if price else "N/A"} \t used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"} \t bestUsedPrice {locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n'
     return body
 
 
@@ -114,7 +124,8 @@ def scrapeURL(soup):
             "price": price,
             "priceUsed": priceUsed,
             "history": {"price": [], "priceUsed": []},
-            "savings": float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0)
+            "savings": float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0),
+            "bestUsedPrice": priceUsed
         }
 
         scrappedItems.append(scrappedItem)
@@ -140,6 +151,7 @@ def updateWishList(newItems):
             item["price"] = newItem["price"]
             item["priceUsed"] = newItem["priceUsed"]
             item["savings"] = newItem["savings"]
+            item["bestUsedPrice"] = newItem["priceUsed"] if (newItem["priceUsed"] is not None and (item["bestUsedPrice"] is None or newItem["priceUsed"] < item["bestUsedPrice"])) else item["bestUsedPrice"]
             updatedItems.append(item)
 
     return updatedItems
@@ -186,19 +198,32 @@ def isSavingsGreaterThanStrategy(price, priceUsed, minSavingsPercentage):
 def notifyUpdates(items):
     # if not empty
     if items:
-        text_type = 'plain'  # or 'html'
-        text = buildBody(items)
-        msg = MIMEText(text, text_type, 'utf-8')
+        body = buildBody(items)
+        match notification_method:
+            case "TELEGRAM":
+                sendTelegram(body)
+            case "EMAIL":
+                sendEmail(body)
+            case _:
+                print("Set a notification method TELEGRAM|EMAIL in properties")
 
-        msg['Subject'] = get_subject(items)
-        msg['From'] = emailFrom
-        msg['To'] = emailTo
+def sendTelegram(body):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={body}"
+    requests.get(url).json()
+       
+def sendEmail(body):
+    text_type = 'plain'  # or 'html'
+    
+    msg = MIMEText(text, text_type, 'utf-8')
 
-        server = smtplib.SMTP_SSL(host, port)
-        server.login(username, password)
-        server.send_message(msg)
-        server.quit()
+    msg['Subject'] = get_subject(items)
+    msg['From'] = emailFrom
+    msg['To'] = emailTo
 
+    server = smtplib.SMTP_SSL(host, port)
+    server.login(username, password)
+    server.send_message(msg)
+    server.quit()
 
 def get_subject(items):
     numItems = len(items)
@@ -219,8 +244,9 @@ def printItem(item, isSent):
     savings = f"{item['savings']}".rjust(6)
     price = f"{item['price']}".rjust(7)
     used = f"{item['priceUsed']}".rjust(7)
+    bestUsedPrice = f"{item['bestUsedPrice']}".rjust(7)
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    print(f"{dt_string} {'NOTIFIED' if isSent else '        '} {item['title'][0:60]:60} \t savings: {savings}% \t price: {price} \t used: {used} \t priceHistory: {item['history']['price']} \t priceUsedHistory: {item['history']['priceUsed']}")
+    print(f"{dt_string} {'NOTIFIED' if isSent else '        '} {item['title'][0:50]:55}\tsavings:{savings}% \tprice:{price} \tused: {used}\tbestUsed:{bestUsedPrice}\tHistory(price/used): {item['history']['price']}/{item['history']['priceUsed']}")
     	
 def printItemsTitles(items):
     for item in items:

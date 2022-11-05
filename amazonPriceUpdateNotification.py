@@ -4,6 +4,7 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from jproperties import Properties
 import locale
+import re
 
 import requests
 from bs4 import BeautifulSoup
@@ -66,7 +67,11 @@ def findPriceUsed(item):
 
 def findId(item):
     return item["data-itemid"]
-
+    
+def findURLtoITEM(item):
+    removePrefix = re.sub('.*ASIN:', '', item["data-reposition-action-params"])
+    removeSufix = re.sub('\|.*', '', removePrefix)
+    return f'https://www.amazon.es/dp/{removeSufix}'
 
 # Remove items not in the wish list anymore. i.e. removed from actual amazon wish list.
 def itemsToMap(items):
@@ -99,6 +104,7 @@ def buildBody(items):
     #body = "The following items have updated prices\n\n"
     body = ''
     for item in items:
+        itemId = item["id"]
         title = item["title"][0:25]
         savings = f"{item['savings']}".rjust(6)
         price = item["price"]
@@ -106,8 +112,10 @@ def buildBody(items):
         priceUsed = item["priceUsed"]
         priceUsedOld = item["history"]["priceUsed"]
         bestUsedPrice = item['bestUsedPrice']
+        url = item["url"]
         #body += '***********************************\n'
-        body += f'{savings}% - {title}\n{locale.currency(price, grouping=True) if price else "N/A"}/{locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"} - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n'
+        body += f'{savings}% - [{title}]({url})\n({locale.currency(price, grouping=True) if price else "N/A"} -> {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}) - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n---------------\n'
+
     return body
 
 
@@ -125,7 +133,8 @@ def scrapeURL(soup):
             "priceUsed": priceUsed,
             "history": {"price": [], "priceUsed": []},
             "savings": float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0),
-            "bestUsedPrice": priceUsed
+            "bestUsedPrice": priceUsed,
+            "url": findURLtoITEM(item)
         }
 
         scrappedItems.append(scrappedItem)
@@ -208,7 +217,7 @@ def notifyUpdates(items):
                 print("Set a notification method TELEGRAM|EMAIL in properties")
 
 def sendTelegram(body):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={body}"
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&disable_web_page_preview=true&parse_mode=Markdown&text={body}"
     requests.get(url).json()
        
 def sendEmail(body):

@@ -99,7 +99,7 @@ def buildBody(items):
     #body = "The following items have updated prices\n\n"
     body = ''
     for item in items:
-        title = item["title"][0:40]
+        title = item["title"][0:25]
         savings = f"{item['savings']}".rjust(6)
         price = item["price"]
         priceOld = item["history"]["price"]
@@ -107,7 +107,7 @@ def buildBody(items):
         priceUsedOld = item["history"]["priceUsed"]
         bestUsedPrice = item['bestUsedPrice']
         #body += '***********************************\n'
-        body += f'{title}\nsavings: {savings} % \t price: {locale.currency(price, grouping=True) if price else "N/A"} \t used {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"} \t bestUsedPrice {locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n'
+        body += f'{savings}% - {title}\n{locale.currency(price, grouping=True) if price else "N/A"}/{locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"} - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n'
     return body
 
 
@@ -234,7 +234,7 @@ def get_subject(items):
     priceUsed = item['priceUsed']
     priceUsedLocale = locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"
 
-    return f"Wishlist({numItems}): {title}...({priceLocale}/{priceUsedLocale})"
+    return f"AMAZON{numItems}): {title}...({priceLocale}/{priceUsedLocale})"
 
 def printItems(items):
     for item in items:

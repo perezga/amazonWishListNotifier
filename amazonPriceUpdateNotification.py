@@ -14,7 +14,7 @@ from datetime import datetime
 import sched, time
 
 wish_list = {}
-locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
+#locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
 
 configs: Properties = Properties()
 with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
@@ -48,30 +48,76 @@ def clean_up_wishlist():
 
 
 def findTitle(item):
-    itemId = item["data-itemid"]
-    title = item.find("a", id=f"itemName_{itemId}")["title"]
-
-    return title
+    try:
+        itemId = item["data-itemid"]
+        title_element = item.find("a", id=f"itemName_{itemId}")
+        if title_element and title_element.has_attr('title'):
+            return title_element["title"]
+        else:
+            print(f"Title attribute not found for item {itemId}")
+            return "Title not found"
+    except (TypeError, KeyError) as e:
+        itemId = item.get("data-itemid", "N/A")
+        print(f"Could not find title for item {itemId}: {e}")
+        return "Title not found"
 
 
 def findPrice(item):
-    priceWhole = item.find("span", class_="a-price-whole")
-    priceFraction = item.find("span", class_="a-price-fraction")
-    return locale.atof(f'{priceWhole.text}{priceFraction.text}') if priceWhole else None
+    price_str = item.get('data-price')
+    itemId = item.get("data-itemid", "N/A")
+    if not price_str or price_str == "-Infinity":
+        # This is not an error, just means the item might be unavailable
+        # print(f"Price not available for item {itemId}.")
+        return None
+    try:
+        # The data-price attribute uses a period as a decimal separator.
+        return float(price_str)
+    except (ValueError) as e:
+        print(f"Could not parse price for item {itemId} from value '{price_str}': {e}")
+    return None
 
 
-def findPriceUsed(item):
-    priceUsed = item.find("span", class_="a-color-price itemUsedAndNewPrice")
-    return locale.atof(f'{priceUsed.text.strip()}'.split()[0]) if priceUsed else None
+def findUsedPrice(soup):
+    try:
+        offer_list = soup.find(id="aod-offer-list")
+        if not offer_list:
+            return None
+
+        # Find the first offer price, which is usually the lowest
+        price_span = offer_list.find('span', class_='a-offscreen')
+        if price_span and price_span.string:
+            usedPrice = price_span.string.strip()
+            # Format is like "1.234,56 €" or "€1,234.56" depending on locale
+            cleaned_price = usedPrice.replace("€", "").replace("$", "").replace(",", ".").strip()
+            if cleaned_price.count('.') > 1:
+                cleaned_price = cleaned_price.replace(".", "", cleaned_price.count('.') - 1)
+            return float(cleaned_price)
+    except AttributeError as e:
+        print(f"Error parsing used price from offer page: {e}")
+    except ValueError as e:
+        print(f"Could not convert used price to float: {e}")
+    return None
 
 
 def findId(item):
     return item["data-itemid"]
     
 def findURLtoITEM(item):
-    removePrefix = re.sub('.*ASIN:', '', item["data-reposition-action-params"])
-    removeSufix = re.sub('\|.*', '', removePrefix)
-    return f'https://www.amazon.es/dp/{removeSufix}'
+    itemId = item.get("data-itemid", "N/A")
+    try:
+        link = item.find("a", id=f"itemName_{itemId}")
+        if link and link.has_attr('href'):
+            url = link['href']
+            # Ensure the URL is absolute
+            if url.startswith('/'):
+                return f"https://www.amazon.es{url}"
+            return url
+        else:
+            print(f"URL not found for item {itemId}")
+            return None
+    except (TypeError, KeyError) as e:
+        print(f"Error finding URL for item {itemId}: {e}")
+    return None
 
 # Remove items not in the wish list anymore. i.e. removed from actual amazon wish list.
 def itemsToMap(items):
@@ -123,18 +169,42 @@ def scrapeURL(soup):
     notification_list = []
     scrappedItems = []
     items = soup.find_all(attrs={"data-itemid": True})
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "Connection": "keep-alive",
+    }
     for item in items:
         price = findPrice(item)
-        priceUsed = findPriceUsed(item)
+        url = findURLtoITEM(item)
+        priceUsed = None
+
+        if url:
+            # Extract ASIN from URL
+            match = re.search(r'/dp/([A-Z0-9]{10})', url)
+            if match:
+                asin = match.group(1)
+                offer_url = f"https://www.amazon.es/gp/offer-listing/{asin}/"
+                try:
+                    offer_page_text = requests.get(offer_url, headers=headers).text
+                    offer_soup = BeautifulSoup(offer_page_text, "html.parser")
+                    priceUsed = findUsedPrice(offer_soup)
+                except requests.exceptions.RequestException as e:
+                    print(f"Could not fetch offer page for {asin}: {e}")
+
+        savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
+
         scrappedItem = {
             "id": findId(item),
             "title": findTitle(item),
             "price": price,
             "priceUsed": priceUsed,
             "history": {"price": [], "priceUsed": []},
-            "savings": float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price else float(0),
+            "savings": savings,
             "bestUsedPrice": priceUsed,
-            "url": findURLtoITEM(item)
+            "url": url
         }
 
         scrappedItems.append(scrappedItem)
@@ -218,21 +288,30 @@ def notifyUpdates(items):
 
 def sendTelegram(body):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&disable_web_page_preview=true&parse_mode=Markdown&text={body}"
-    requests.get(url).json()
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        print("Telegram notification sent successfully.")
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to send Telegram notification: {e}")
        
 def sendEmail(body):
     text_type = 'plain'  # or 'html'
     
-    msg = MIMEText(text, text_type, 'utf-8')
+    try:
+        msg = MIMEText(body, text_type, 'utf-8')
+        msg['Subject'] = get_subject(items)
+        msg['From'] = emailFrom
+        msg['To'] = emailTo
 
-    msg['Subject'] = get_subject(items)
-    msg['From'] = emailFrom
-    msg['To'] = emailTo
-
-    server = smtplib.SMTP_SSL(host, port)
-    server.login(username, password)
-    server.send_message(msg)
-    server.quit()
+        with smtplib.SMTP_SSL(host, port, timeout=10) as server:
+            server.login(username, password)
+            server.send_message(msg)
+            print("Email notification sent successfully.")
+    except smtplib.SMTPException as e:
+        print(f"Failed to send email notification (SMTP Error): {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred while sending email: {e}")
 
 def get_subject(items):
     numItems = len(items)
@@ -261,43 +340,51 @@ def printItemsTitles(items):
     for item in items:
     	print(f"{item['title'][0:60]:60}")
 
-def browse_and_scrape(urls):
-    dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    
-    scrappedItems = scrapeURLs(urls)
-    #print(f"{dt_string} Number of items scrapped {len(scrappedItems)}")
-
-    scrappedItems = sorted(scrappedItems, key=lambda x: x["savings"], reverse=True)
-    
-    updatedItems = updateWishList(scrappedItems)
-    filteredItems = filterUpdates(updatedItems)
-    if len(filteredItems) > 0:
-        notifyUpdates(filteredItems)
-
 def scrapeURLs(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     scrappedItems = []
-
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "Connection": "keep-alive",
+    }
     for url in urls:
-        #print(f"{dt_string} Scraping - {url}")
-
-        html_text = requests.get(url).text
-        soup = BeautifulSoup(html_text, "html.parser")
-        items = scrapeURL(soup)
-
-        scrappedItems.extend(items)
+        try:
+            html_text = requests.get(url, headers=headers).text
+            soup = BeautifulSoup(html_text, "html.parser")
+            items = scrapeURL(soup)
+            scrappedItems.extend(items)
+        except requests.exceptions.RequestException as e:
+            print(f"Error scraping {url}: {e}")
+            continue
     return scrappedItems
 
 
 if __name__ == "__main__":
-
     s = sched.scheduler(time.time, time.sleep)
-    s.enter(60, 1, clean_up_wishlist)
 
-    while True:
-        try:
-            browse_and_scrape(wishlistURLs)
-        except Exception as inst:
-            print(inst)
+    def main(sc):
+        print("Scraping and checking for price updates...")
+        scrappedItems = scrapeURLs(wishlistURLs)
 
-        time.sleep(30)
+        # First, clean up any items that are no longer on the wishlist
+        cleanupRemovedItems(scrappedItems)
+
+        # Then, update the price history for the remaining items
+        updatedItems = updateWishList(scrappedItems)
+
+        # Filter for items with significant price drops
+        filteredItems = filterUpdates(updatedItems)
+
+        # Notify if there are any items that meet the criteria
+        if filteredItems:
+            notifyUpdates(filteredItems)
+
+        print("Check complete. Next check scheduled.")
+        s.enter(3600, 1, main, (sc,))
+
+    # Initial call to start the process
+    s.enter(1, 1, main, (s,))
+    s.run()

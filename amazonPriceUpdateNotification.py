@@ -78,35 +78,34 @@ def findPrice(item):
 
 
 def findUsedPrice(soup):
+    """
+    Finds the best used price from the offer listing page.
+    """
     try:
-        # Strategy 1: Look for a link to used offers on the product page.
-        # This is often more reliable than a specific element ID.
-        used_offer_link = soup.find('a', href=lambda href: href and 'condition=used' in href)
-        if used_offer_link:
-            price_text = used_offer_link.get_text(strip=True)
-            # Find the first number-like pattern in the link text.
-            match = re.search(r'[\d\.,]+', price_text)
-            if match:
-                price_str = match.group(0)
-                # Clean the price string
-                cleaned_price = price_str.replace(",", ".")
-                if cleaned_price.count('.') > 1:
-                    cleaned_price = cleaned_price.replace(".", "", cleaned_price.count('.') - 1)
-                return float(cleaned_price)
+        # The main container for all offers
+        offer_list = soup.find("div", id="aod-offer-list")
+        if not offer_list:
+            return None
 
-        # Strategy 2: Fallback to the original logic for the all-offers-display page.
-        offer_list = soup.find(id="aod-offer-list")
-        if offer_list:
-            price_span = offer_list.find('span', class_='a-offscreen')
-            if price_span and price_span.string:
-                usedPrice = price_span.string.strip()
-                cleaned_price = usedPrice.replace("€", "").replace("$", "").replace(",", ".").strip()
-                if cleaned_price.count('.') > 1:
-                    cleaned_price = cleaned_price.replace(".", "", cleaned_price.count('.') - 1)
-                return float(cleaned_price)
+        prices = []
+        # Find all used offer containers
+        offers = offer_list.find_all("div", id="aod-offer")
+        for offer in offers:
+            condition_element = offer.find("div", id="aod-offer-heading")
+            if condition_element and "Used" in condition_element.get_text():
+                price_element = offer.find("span", class_="a-price")
+                if price_element:
+                    price_text = price_element.find("span", class_="a-offscreen").text
+                    # Price is in format €165.21, need to convert to float
+                    # remove currency symbol, replace comma with dot
+                    price_str = re.sub(r'[^\d,.]', '', price_text).replace('.', '').replace(',', '.')
+                    if price_str:
+                         prices.append(float(price_str))
 
-    except Exception as e:
-        print(f"Error parsing used price: {e}")
+        if prices:
+            return min(prices)
+    except (AttributeError, ValueError) as e:
+        print(f"Could not find or parse used price: {e}")
 
     return None
 
@@ -195,9 +194,15 @@ def scrape_wishlist_page(soup, base_url):
 
         if url:
             try:
-                product_page_text = requests.get(url, headers=headers).text
-                product_soup = BeautifulSoup(product_page_text, "html.parser")
-                priceUsed = findUsedPrice(product_soup)
+                # Construct the offer listing URL from the product URL
+                match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                if match:
+                    asin = match.group(1)
+                    offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
+
+                    offer_page_text = requests.get(offer_url, headers=headers).text
+                    offer_soup = BeautifulSoup(offer_page_text, "html.parser")
+                    priceUsed = findUsedPrice(offer_soup)
             except requests.exceptions.RequestException as e:
                 print(f"Could not fetch product page for {url}: {e}")
 
@@ -376,7 +381,6 @@ def scrape_wishlists(urls):
 
 if __name__ == "__main__":
     s = sched.scheduler(time.time, time.sleep)
-
     def main(sc):
         print("Scraping and checking for price updates...")
         scrappedItems = scrape_wishlists(wishlistURLs)
@@ -394,9 +398,8 @@ if __name__ == "__main__":
         if filteredItems:
             notifyUpdates(filteredItems)
 
-        print("Check complete. Next check scheduled.")
+        print("Check complete.")
         s.enter(3600, 1, main, (sc,))
 
-    # Initial call to start the process
     s.enter(1, 1, main, (s,))
     s.run()

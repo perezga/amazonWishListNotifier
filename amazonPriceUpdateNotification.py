@@ -79,30 +79,42 @@ def findPrice(item):
 
 def findUsedPrice(soup):
     try:
-        offer_list = soup.find(id="aod-offer-list")
-        if not offer_list:
-            return None
+        # Strategy 1: Look for a link to used offers on the product page.
+        # This is often more reliable than a specific element ID.
+        used_offer_link = soup.find('a', href=lambda href: href and 'condition=used' in href)
+        if used_offer_link:
+            price_text = used_offer_link.get_text(strip=True)
+            # Find the first number-like pattern in the link text.
+            match = re.search(r'[\d\.,]+', price_text)
+            if match:
+                price_str = match.group(0)
+                # Clean the price string
+                cleaned_price = price_str.replace(",", ".")
+                if cleaned_price.count('.') > 1:
+                    cleaned_price = cleaned_price.replace(".", "", cleaned_price.count('.') - 1)
+                return float(cleaned_price)
 
-        # Find the first offer price, which is usually the lowest
-        price_span = offer_list.find('span', class_='a-offscreen')
-        if price_span and price_span.string:
-            usedPrice = price_span.string.strip()
-            # Format is like "1.234,56 €" or "€1,234.56" depending on locale
-            cleaned_price = usedPrice.replace("€", "").replace("$", "").replace(",", ".").strip()
-            if cleaned_price.count('.') > 1:
-                cleaned_price = cleaned_price.replace(".", "", cleaned_price.count('.') - 1)
-            return float(cleaned_price)
-    except AttributeError as e:
-        print(f"Error parsing used price from offer page: {e}")
-    except ValueError as e:
-        print(f"Could not convert used price to float: {e}")
+        # Strategy 2: Fallback to the original logic for the all-offers-display page.
+        offer_list = soup.find(id="aod-offer-list")
+        if offer_list:
+            price_span = offer_list.find('span', class_='a-offscreen')
+            if price_span and price_span.string:
+                usedPrice = price_span.string.strip()
+                cleaned_price = usedPrice.replace("€", "").replace("$", "").replace(",", ".").strip()
+                if cleaned_price.count('.') > 1:
+                    cleaned_price = cleaned_price.replace(".", "", cleaned_price.count('.') - 1)
+                return float(cleaned_price)
+
+    except Exception as e:
+        print(f"Error parsing used price: {e}")
+
     return None
 
 
 def findId(item):
     return item["data-itemid"]
     
-def findURLtoITEM(item):
+def findURLtoITEM(item, base_url):
     itemId = item.get("data-itemid", "N/A")
     try:
         link = item.find("a", id=f"itemName_{itemId}")
@@ -110,7 +122,7 @@ def findURLtoITEM(item):
             url = link['href']
             # Ensure the URL is absolute
             if url.startswith('/'):
-                return f"https://www.amazon.es{url}"
+                return f"{base_url}{url}"
             return url
         else:
             print(f"URL not found for item {itemId}")
@@ -165,7 +177,7 @@ def buildBody(items):
     return body
 
 
-def scrapeURL(soup):
+def scrape_wishlist_page(soup, base_url):
     notification_list = []
     scrappedItems = []
     items = soup.find_all(attrs={"data-itemid": True})
@@ -178,21 +190,16 @@ def scrapeURL(soup):
     }
     for item in items:
         price = findPrice(item)
-        url = findURLtoITEM(item)
+        url = findURLtoITEM(item, base_url)
         priceUsed = None
 
         if url:
-            # Extract ASIN from URL
-            match = re.search(r'/dp/([A-Z0-9]{10})', url)
-            if match:
-                asin = match.group(1)
-                offer_url = f"https://www.amazon.es/gp/offer-listing/{asin}/"
-                try:
-                    offer_page_text = requests.get(offer_url, headers=headers).text
-                    offer_soup = BeautifulSoup(offer_page_text, "html.parser")
-                    priceUsed = findUsedPrice(offer_soup)
-                except requests.exceptions.RequestException as e:
-                    print(f"Could not fetch offer page for {asin}: {e}")
+            try:
+                product_page_text = requests.get(url, headers=headers).text
+                product_soup = BeautifulSoup(product_page_text, "html.parser")
+                priceUsed = findUsedPrice(product_soup)
+            except requests.exceptions.RequestException as e:
+                print(f"Could not fetch product page for {url}: {e}")
 
         savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
@@ -340,7 +347,7 @@ def printItemsTitles(items):
     for item in items:
     	print(f"{item['title'][0:60]:60}")
 
-def scrapeURLs(urls):
+def scrape_wishlists(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     scrappedItems = []
     headers = {
@@ -352,9 +359,14 @@ def scrapeURLs(urls):
     }
     for url in urls:
         try:
+            base_url_match = re.search(r"(https?://www\.amazon\.[a-z\.]+)", url)
+            if not base_url_match:
+                print(f"Could not determine base URL from {url}")
+                continue
+            base_url = base_url_match.group(1)
             html_text = requests.get(url, headers=headers).text
             soup = BeautifulSoup(html_text, "html.parser")
-            items = scrapeURL(soup)
+            items = scrape_wishlist_page(soup, base_url)
             scrappedItems.extend(items)
         except requests.exceptions.RequestException as e:
             print(f"Error scraping {url}: {e}")
@@ -367,7 +379,7 @@ if __name__ == "__main__":
 
     def main(sc):
         print("Scraping and checking for price updates...")
-        scrappedItems = scrapeURLs(wishlistURLs)
+        scrappedItems = scrape_wishlists(wishlistURLs)
 
         # First, clean up any items that are no longer on the wishlist
         cleanupRemovedItems(scrappedItems)

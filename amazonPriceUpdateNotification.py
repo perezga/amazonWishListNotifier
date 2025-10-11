@@ -14,7 +14,10 @@ from datetime import datetime
 import sched, time
 
 wish_list = {}
-#locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
+try:
+    locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
+except locale.Error as e:
+    print(f"Could not set locale: {e}. Prices will be displayed without currency formatting.")
 
 configs: Properties = Properties()
 with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
@@ -82,25 +85,30 @@ def findUsedPrice(soup):
     Finds the best used price from the offer listing page.
     """
     try:
-        # The main container for all offers
-        offer_list = soup.find("div", id="aod-offer-list")
+        offer_list = soup.select_one("#aod-offer-list")
         if not offer_list:
             return None
 
         prices = []
-        # Find all used offer containers
-        offers = offer_list.find_all("div", id="aod-offer")
+        offers = offer_list.select("#aod-offer")
         for offer in offers:
-            condition_element = offer.find("div", id="aod-offer-heading")
-            if condition_element and "Used" in condition_element.get_text():
-                price_element = offer.find("span", class_="a-price")
+            condition_element = offer.select_one("#aod-offer-heading")
+            if condition_element and "Used" in condition_element.get_text(strip=True):
+                price_element = offer.select_one(".a-price .a-offscreen")
                 if price_element:
-                    price_text = price_element.find("span", class_="a-offscreen").text
-                    # Price is in format €165.21, need to convert to float
-                    # remove currency symbol, replace comma with dot
-                    price_str = re.sub(r'[^\d,.]', '', price_text).replace('.', '').replace(',', '.')
+                    price_text = price_element.get_text(strip=True)
+                    # Price is in format €165.21 or $165.21, etc.
+                    # Remove currency symbols, thousands separators, and use a dot for the decimal.
+                    price_str = re.sub(r'[^\d,.]', '', price_text)
+                    if ',' in price_str and '.' in price_str:
+                        # Handles formats like 1.234,56
+                        price_str = price_str.replace('.', '').replace(',', '.')
+                    elif ',' in price_str:
+                        # Handles formats like 1,23
+                        price_str = price_str.replace(',', '.')
+
                     if price_str:
-                         prices.append(float(price_str))
+                        prices.append(float(price_str))
 
         if prices:
             return min(prices)
@@ -194,17 +202,20 @@ def scrape_wishlist_page(soup, base_url):
 
         if url:
             try:
-                # Construct the offer listing URL from the product URL
                 match = re.search(r'/dp/([A-Z0-9]{10})', url)
                 if match:
                     asin = match.group(1)
                     offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
 
-                    offer_page_text = requests.get(offer_url, headers=headers).text
-                    offer_soup = BeautifulSoup(offer_page_text, "html.parser")
+                    print(f"Scraping used price for {asin} from {offer_url}")
+                    offer_page_response = requests.get(offer_url, headers=headers, timeout=10)
+                    offer_page_response.raise_for_status()
+                    offer_soup = BeautifulSoup(offer_page_response.text, "html.parser")
                     priceUsed = findUsedPrice(offer_soup)
             except requests.exceptions.RequestException as e:
                 print(f"Could not fetch product page for {url}: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred while scraping used price for {url}: {e}")
 
         savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
@@ -233,16 +244,21 @@ def updateWishList(newItems):
         if item is None:
             wish_list[itemId] = newItem
             updatedItems.append(newItem)
-
         elif item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
             item["history"]["price"].insert(0, item["price"])
-            item["history"]["price"] = item["history"]["price"][0:2]
+            item["history"]["price"] = item["history"]["price"][:2]
             item["history"]["priceUsed"].insert(0, item["priceUsed"])
-            item["history"]["priceUsed"] = item["history"]["priceUsed"][0:2]
+            item["history"]["priceUsed"] = item["history"]["priceUsed"][:2]
+
             item["price"] = newItem["price"]
             item["priceUsed"] = newItem["priceUsed"]
             item["savings"] = newItem["savings"]
-            item["bestUsedPrice"] = newItem["priceUsed"] if (newItem["priceUsed"] is not None and (item["bestUsedPrice"] is None or newItem["priceUsed"] < item["bestUsedPrice"])) else item["bestUsedPrice"]
+
+            # Update bestUsedPrice if the new used price is better
+            if newItem["priceUsed"] is not None:
+                if item.get("bestUsedPrice") is None or newItem["priceUsed"] < item["bestUsedPrice"]:
+                    item["bestUsedPrice"] = newItem["priceUsed"]
+
             updatedItems.append(item)
 
     return updatedItems
@@ -251,29 +267,14 @@ def updateWishList(newItems):
 def filterUpdates(items):
     filteredItems = []
     for item in items:
-        priceUsedNew = item["priceUsed"]
-        priceUsedOld = item["history"]["priceUsed"][0] if len(item["history"]["priceUsed"]) > 0 else None
-        priceNew = item["price"]
-        priceOld = item["history"]["price"][0] if len(item["history"]["price"]) > 0 else None
-
-        #if isSmallerPriceStrategy(priceUsedNew, priceUsedOld) or isSmallerPrice(priceNew, priceOld):
-        if isSavingsGreaterThanStrategy(priceNew, priceUsedNew, minSavingsPercentage):        
+        # We only notify if there's a valid used price that meets the savings criteria
+        if isSavingsGreaterThanStrategy(item["price"], item["priceUsed"], minSavingsPercentage):
             filteredItems.append(item)
             printItem(item, True)
         else:
             printItem(item, False)
 
     return filteredItems
-
-# True if PriceUsed is not set or when any of New or Old prices is smaller than its previous value.
-def isSmallerPriceStrategy(priceUsedNew, priceUsedOld):
-    if priceUsedNew and priceUsedOld:
-        if priceUsedOld > priceUsedNew:
-            return True
-    elif priceUsedNew and not priceUsedOld:
-        return True
-    else:
-        return False
 
 # True only if Used price is X percent smaller than the normal price.
 #Where X is minSavingsPercentage
@@ -299,6 +300,10 @@ def notifyUpdates(items):
                 print("Set a notification method TELEGRAM|EMAIL in properties")
 
 def sendTelegram(body):
+    if not TOKEN or not chat_id:
+        print("Telegram token or chat_id not provided in properties file. Skipping notification.")
+        return
+
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&disable_web_page_preview=true&parse_mode=Markdown&text={body}"
     try:
         response = requests.get(url, timeout=10)

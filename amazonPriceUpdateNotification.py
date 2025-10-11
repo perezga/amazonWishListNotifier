@@ -80,6 +80,33 @@ def findPrice(item):
     return None
 
 
+def findUsedPriceOnProductPage(soup):
+    """
+    Finds the used price on the main product page from the 'save with used' block.
+    """
+    try:
+        # This selector targets the "Ahorra con usado" block.
+        # It looks for a div with id="usedBuyBox" which is common for this feature.
+        # It might also be under an element with id containing 'used_buybox'
+        used_price_element = soup.select_one('#usedBuyBox .a-price .a-offscreen, [id*="used_buybox"] .a-price .a-offscreen')
+
+        if used_price_element:
+            price_text = used_price_element.get_text(strip=True)
+            # Price parsing logic copied from findUsedPrice
+            price_str = re.sub(r'[^\d,.]', '', price_text)
+            if ',' in price_str and '.' in price_str:
+                price_str = price_str.replace('.', '').replace(',', '.')
+            elif ',' in price_str:
+                price_str = price_str.replace(',', '.')
+
+            if price_str:
+                return float(price_str)
+    except (AttributeError, ValueError) as e:
+        print(f"Could not find or parse used price on product page: {e}")
+
+    return None
+
+
 def findUsedPrice(soup):
     """
     Finds the best used price from the offer listing page.
@@ -202,16 +229,24 @@ def scrape_wishlist_page(soup, base_url):
 
         if url:
             try:
-                match = re.search(r'/dp/([A-Z0-9]{10})', url)
-                if match:
-                    asin = match.group(1)
-                    offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
+                # First, try to get the used price from the product page itself
+                product_page_response = requests.get(url, headers=headers, timeout=10)
+                product_page_response.raise_for_status()
+                product_soup = BeautifulSoup(product_page_response.text, "html.parser")
+                priceUsed = findUsedPriceOnProductPage(product_soup)
 
-                    print(f"Scraping used price for {asin} from {offer_url}")
-                    offer_page_response = requests.get(offer_url, headers=headers, timeout=10)
-                    offer_page_response.raise_for_status()
-                    offer_soup = BeautifulSoup(offer_page_response.text, "html.parser")
-                    priceUsed = findUsedPrice(offer_soup)
+                # If not found on the product page, check the offer-listing page
+                if priceUsed is None:
+                    match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                    if match:
+                        asin = match.group(1)
+                        offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
+
+                        print(f"Scraping used price for {asin} from {offer_url}")
+                        offer_page_response = requests.get(offer_url, headers=headers, timeout=10)
+                        offer_page_response.raise_for_status()
+                        offer_soup = BeautifulSoup(offer_page_response.text, "html.parser")
+                        priceUsed = findUsedPrice(offer_soup)
             except requests.exceptions.RequestException as e:
                 print(f"Could not fetch product page for {url}: {e}")
             except Exception as e:

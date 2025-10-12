@@ -43,6 +43,8 @@ emailTo = configs.get("email.to").data
 #Minimum savings percentage between normal price and Used price.Used to notify only when that condition meets.
 minSavingsPercentage = float(configs.get("notification.savings.percentage").data)
 
+used_condition_keywords = configs.get("used.condition.keywords").data.split(',')
+
 def clean_up_wishlist():
     print("Wishlist cleanup process started...")
     scrappedItems = scrapeURLs(wishlistURLs)
@@ -85,14 +87,11 @@ def findUsedPriceOnProductPage(soup):
     Finds the used price on the main product page from the 'save with used' block.
     """
     try:
-        # This selector targets the "Ahorra con usado" block.
-        # It looks for a div with id="usedBuyBox" which is common for this feature.
-        # It might also be under an element with id containing 'used_buybox'
-        used_price_element = soup.select_one('#usedBuyBox .a-price .a-offscreen, [id*="used_buybox"] .a-price .a-offscreen')
+        # Updated selector for the 'save with used' block
+        used_price_element = soup.select_one('#usedBuyBox .a-price .a-offscreen, [id*="used_buybox"] .a-price .a-offscreen, #olp-upd-new-used .a-price .a-offscreen')
 
         if used_price_element:
             price_text = used_price_element.get_text(strip=True)
-            # Price parsing logic copied from findUsedPrice
             price_str = re.sub(r'[^\d,.]', '', price_text)
             if ',' in price_str and '.' in price_str:
                 price_str = price_str.replace('.', '').replace(',', '.')
@@ -112,26 +111,26 @@ def findUsedPrice(soup):
     Finds the best used price from the offer listing page.
     """
     try:
-        offer_list = soup.select_one("#aod-offer-list")
+        # The new selector for the container of all offers
+        offer_list = soup.select_one("#aod-offer-list, #olpOfferList")
         if not offer_list:
             return None
 
         prices = []
-        offers = offer_list.select("#aod-offer")
+        # The new selector for individual offer containers
+        offers = offer_list.select(".aod-offer, .olpOffer")
         for offer in offers:
-            condition_element = offer.select_one("#aod-offer-heading")
-            if condition_element and "Used" in condition_element.get_text(strip=True):
-                price_element = offer.select_one(".a-price .a-offscreen")
+            # The new selector for the condition text
+            condition_element = offer.select_one(".aod-offer-heading, .olpCondition")
+            if condition_element and any(keyword in condition_element.get_text(strip=True) for keyword in used_condition_keywords):
+                # The new selector for the price
+                price_element = offer.select_one(".a-price .a-offscreen, .olpOfferPrice")
                 if price_element:
                     price_text = price_element.get_text(strip=True)
-                    # Price is in format €165.21 or $165.21, etc.
-                    # Remove currency symbols, thousands separators, and use a dot for the decimal.
                     price_str = re.sub(r'[^\d,.]', '', price_text)
                     if ',' in price_str and '.' in price_str:
-                        # Handles formats like 1.234,56
                         price_str = price_str.replace('.', '').replace(',', '.')
                     elif ',' in price_str:
-                        # Handles formats like 1,23
                         price_str = price_str.replace(',', '.')
 
                     if price_str:

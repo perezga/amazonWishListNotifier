@@ -440,7 +440,7 @@ if __name__ == "__main__":
             notifyUpdates(filteredItems)
 
         print("Check complete.")
-        s.enter(3600, 1, main, (sc,))
+        s.enter(120, 1, main, (sc,))
 
     s.enter(1, 1, main, (s,))
     s.run()

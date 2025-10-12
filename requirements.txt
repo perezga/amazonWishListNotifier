@@ -1,0 +1,4 @@
+jproperties
+requests
+beautifulsoup4
+playwright

@@ -8,6 +8,8 @@ import re
 
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
 
 from datetime import datetime
 
@@ -116,7 +118,6 @@ def findUsedPrice(soup):
         if not offer_list:
             return None
 
-        prices = []
         # The new selector for individual offer containers
         offers = offer_list.select(".aod-offer, .olpOffer")
         for offer in offers:
@@ -134,10 +135,8 @@ def findUsedPrice(soup):
                         price_str = price_str.replace(',', '.')
 
                     if price_str:
-                        prices.append(float(price_str))
+                        return float(price_str)
 
-        if prices:
-            return min(prices)
     except (AttributeError, ValueError) as e:
         print(f"Could not find or parse used price: {e}")
 
@@ -210,17 +209,11 @@ def buildBody(items):
     return body
 
 
-def scrape_wishlist_page(soup, base_url):
+def scrape_wishlist_page(page, soup, base_url):
     notification_list = []
     scrappedItems = []
     items = soup.find_all(attrs={"data-itemid": True})
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-        "Connection": "keep-alive",
-    }
+
     for item in items:
         price = findPrice(item)
         url = findURLtoITEM(item, base_url)
@@ -229,9 +222,9 @@ def scrape_wishlist_page(soup, base_url):
         if url:
             try:
                 # First, try to get the used price from the product page itself
-                product_page_response = requests.get(url, headers=headers, timeout=10)
-                product_page_response.raise_for_status()
-                product_soup = BeautifulSoup(product_page_response.text, "html.parser")
+                page.goto(url, wait_until="load", timeout=60000)
+                product_content = page.content()
+                product_soup = BeautifulSoup(product_content, "html.parser")
                 priceUsed = findUsedPriceOnProductPage(product_soup)
 
                 # If not found on the product page, check the offer-listing page
@@ -242,12 +235,12 @@ def scrape_wishlist_page(soup, base_url):
                         offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
 
                         print(f"Scraping used price for {asin} from {offer_url}")
-                        offer_page_response = requests.get(offer_url, headers=headers, timeout=10)
-                        offer_page_response.raise_for_status()
-                        offer_soup = BeautifulSoup(offer_page_response.text, "html.parser")
+                        page.goto(offer_url, wait_until="load", timeout=60000)
+                        offer_content = page.content()
+                        offer_soup = BeautifulSoup(offer_content, "html.parser")
                         priceUsed = findUsedPrice(offer_soup)
-            except requests.exceptions.RequestException as e:
-                print(f"Could not fetch product page for {url}: {e}")
+            except PlaywrightTimeoutError:
+                print(f"Timeout while trying to load page for {url}")
             except Exception as e:
                 print(f"An unexpected error occurred while scraping used price for {url}: {e}")
 
@@ -394,27 +387,32 @@ def printItemsTitles(items):
 def scrape_wishlists(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     scrappedItems = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-        "Connection": "keep-alive",
-    }
-    for url in urls:
-        try:
-            base_url_match = re.search(r"(https?://www\.amazon\.[a-z\.]+)", url)
-            if not base_url_match:
-                print(f"Could not determine base URL from {url}")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        for url in urls:
+            try:
+                base_url_match = re.search(r"(https?://www\.amazon\.[a-z\.]+)", url)
+                if not base_url_match:
+                    print(f"Could not determine base URL from {url}")
+                    continue
+                base_url = base_url_match.group(1)
+
+                page.goto(url, wait_until="load", timeout=60000)
+                html_text = page.content()
+                soup = BeautifulSoup(html_text, "html.parser")
+
+                items = scrape_wishlist_page(page, soup, base_url)
+                scrappedItems.extend(items)
+            except PlaywrightTimeoutError:
+                print(f"Timeout while trying to load wishlist {url}")
                 continue
-            base_url = base_url_match.group(1)
-            html_text = requests.get(url, headers=headers).text
-            soup = BeautifulSoup(html_text, "html.parser")
-            items = scrape_wishlist_page(soup, base_url)
-            scrappedItems.extend(items)
-        except requests.exceptions.RequestException as e:
-            print(f"Error scraping {url}: {e}")
-            continue
+            except Exception as e:
+                print(f"Error scraping {url}: {e}")
+                continue
+
+        browser.close()
     return scrappedItems
 
 
@@ -439,7 +437,8 @@ if __name__ == "__main__":
             notifyUpdates(filteredItems)
 
         print("Check complete.")
-        s.enter(120, 1, main, (sc,))
+        # s.enter(120, 1, main, (sc,))
 
-    s.enter(1, 1, main, (s,))
-    s.run()
+    # s.enter(1, 1, main, (s,))
+    # s.run()
+    main(s)

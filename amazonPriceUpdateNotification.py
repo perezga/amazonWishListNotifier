@@ -433,6 +433,7 @@ if __name__ == "__main__":
 
         # Filter for items with significant price drops
         filteredItems = filterUpdates(updatedItems)
+        print(f"Number of items to notify: {len(filteredItems)}") 
 
         # Notify if there are any items that meet the criteria
         if filteredItems:

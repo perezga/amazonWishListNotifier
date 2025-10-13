@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from jproperties import Properties
 import locale
 import re
+import random
 
 import requests
 from bs4 import BeautifulSoup
@@ -183,56 +184,60 @@ def buildBody(items):
         body += f'{savings}% - [{title}]({url})\n({locale.currency(price, grouping=True) if price else "N/A"} -> {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}) - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n---------------\n'
 
     return body
-
-
-def scrape_wishlist_page(page, soup, base_url):
+    
+def scrape_wishlist_page(items):
     notification_list = []
     scrappedItems = []
-    items = soup.find_all(attrs={"data-itemid": True})
+    base_url = "https://www.amazon.es"
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-    for item in items:
-        #price = findPrice(item)
-        url = findURLtoITEM(item, base_url)
-        priceUsed = None
-        price = None
+        for item in items:
+            #price = findPrice(item)
+            url = findURLtoITEM(item, base_url)
+            priceUsed = None
+            price = None
 
-        if url:
-            try:
-                # First, try to get the used price from the product page itself
-                page.goto(url, wait_until="load", timeout=60000)
-                product_content = page.content()
-                product_soup = BeautifulSoup(product_content, "html.parser")
-                match = re.search(r'/dp/([A-Z0-9]{10})', url)
-                if match:
-                    asin = match.group(1)
-                    offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
+            if url:
+                try:
+                    match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                    if match:
+                        asin = match.group(1)
+                        offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
+                        page.goto(offer_url, wait_until="load", timeout=60000)
+                        offer_content = page.content()
+                        offer_soup = BeautifulSoup(offer_content, "html.parser")
+                        price = findPrice(offer_soup)
+                        priceUsed = findUsedPrice(offer_soup)
+                except PlaywrightTimeoutError:
+                    print(f"Timeout while trying to load page for {url}")
+                except Exception as e:
+                    print(f"An unexpected error occurred while scraping used price for {url}: {e}")
 
-                    print(f"Scraping price for {asin} from {offer_url}")
-                    page.goto(offer_url, wait_until="load", timeout=60000)
-                    offer_content = page.content()
-                    offer_soup = BeautifulSoup(offer_content, "html.parser")
-                    price = findPrice(offer_soup)
-                    priceUsed = findUsedPrice(offer_soup)
-            except PlaywrightTimeoutError:
-                print(f"Timeout while trying to load page for {url}")
-            except Exception as e:
-                print(f"An unexpected error occurred while scraping used price for {url}: {e}")
+            savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
-        savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
+            scrappedItem = {
+                "id": findId(item),
+                "title": findTitle(item),
+                "price": price,
+                "priceUsed": priceUsed,
+                "history": {"price": [], "priceUsed": []},
+                "savings": savings,
+                "bestUsedPrice": priceUsed,
+                "url": url
+            }
 
-        scrappedItem = {
-            "id": findId(item),
-            "title": findTitle(item),
-            "price": price,
-            "priceUsed": priceUsed,
-            "history": {"price": [], "priceUsed": []},
-            "savings": savings,
-            "bestUsedPrice": priceUsed,
-            "url": url
-        }
+            scrappedItems.append(scrappedItem)
+            
+            # Generate a random float between 5 and 15
+            random_delay = random.uniform(5, 15)
+            # Pause the execution for the random amount of time
+            time.sleep(random_delay)
 
-        scrappedItems.append(scrappedItem)
-        
+
+        browser.close()
     return scrappedItems
 
 
@@ -358,27 +363,37 @@ def printItemsTitles(items):
     for item in items:
     	print(f"{item['title'][0:60]:60}")
 
+def printItemsUrls(list_items):
+    
+    base_url = "https://www.amazon.es"
+    print(f"Num of items {len(list_items)}")
+    for item in list_items:
+                    url = findURLtoITEM(item, base_url)
+
+                    match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                    asin = match.group(1)
+                    print(f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used")
+
 def scrape_wishlists(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    scrappedItems = []
+    items = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
         for url in urls:
+            print(f"Scraping {url}")
             try:
-                base_url_match = re.search(r"(https?://www\.amazon\.[a-z\.]+)", url)
-                if not base_url_match:
-                    print(f"Could not determine base URL from {url}")
-                    continue
-                base_url = base_url_match.group(1)
-
                 page.goto(url, wait_until="load", timeout=60000)
                 html_text = page.content()
                 soup = BeautifulSoup(html_text, "html.parser")
-
-                items = scrape_wishlist_page(page, soup, base_url)
-                scrappedItems.extend(items)
+                
+                list_items = soup.find_all(attrs={"data-itemid": True})
+                printItemsUrls(list_items)
+                
+                items.extend(list_items)
+                
+                
             except PlaywrightTimeoutError:
                 print(f"Timeout while trying to load wishlist {url}")
                 continue
@@ -387,14 +402,20 @@ def scrape_wishlists(urls):
                 continue
 
         browser.close()
-    return scrappedItems
+    return items
 
 
 if __name__ == "__main__":
     s = sched.scheduler(time.time, time.sleep)
-    def main(sc):
-        print("Scraping and checking for price updates...")
-        scrappedItems = scrape_wishlists(wishlistURLs)
+    
+    print("Scraping wishlist items...")
+    items = scrape_wishlists(wishlistURLs)
+        
+    def main(sc, items):
+        
+        
+        scrappedItems = scrape_wishlist_page(items)
+        scrappedItems.extend(scrappedItems)
 
         # First, clean up any items that are no longer on the wishlist
         cleanupRemovedItems(scrappedItems)
@@ -411,8 +432,8 @@ if __name__ == "__main__":
             notifyUpdates(filteredItems)
 
         print("Check complete.")
-        s.enter(120, 1, main, (sc,))
+        s.enter(300, 1, main, (sc, items))
 
-    s.enter(1, 1, main, (s,))
+    s.enter(1, 1, main, (s,items))
     s.run()
     main(s)

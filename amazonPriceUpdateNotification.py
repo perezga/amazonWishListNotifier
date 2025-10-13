@@ -69,73 +69,49 @@ def findTitle(item):
         return "Title not found"
 
 
-def findPrice(item):
-    price_str = item.get('data-price')
-    itemId = item.get("data-itemid", "N/A")
-    if not price_str or price_str == "-Infinity":
-        # This is not an error, just means the item might be unavailable
-        # print(f"Price not available for item {itemId}.")
-        return None
+def findPrice(soup):
+    
     try:
-        # The data-price attribute uses a period as a decimal separator.
-        return float(price_str)
-    except (ValueError) as e:
-        print(f"Could not parse price for item {itemId} from value '{price_str}': {e}")
-    return None
+        pinned_offer = soup.select_one("#aod-pinned-offer")
+        if not pinned_offer:
+            return None
+        price_whole_element = pinned_offer.select_one('span.a-price-whole')
+        price_fraction_element = pinned_offer.select_one('span.a-price-fraction')
+        
+        if price_whole_element:
+            price_whole_text = price_whole_element.get_text(strip=True).replace(',', '')
+            price_fraction_text = price_fraction_element.get_text(strip=True)
+            full_price_float = float(f"{price_whole_text}.{price_fraction_text}")
 
+            if full_price_float:
+                return float(full_price_float)
 
-def findUsedPriceOnProductPage(soup):
-    """
-    Finds the used price on the main product page from the 'save with used' block.
-    """
-    try:
-        # Updated selector for the 'save with used' block
-        used_price_element = soup.select_one('#usedBuyBox .a-price .a-offscreen, [id*="used_buybox"] .a-price .a-offscreen, #olp-upd-new-used .a-price .a-offscreen')
-
-        if used_price_element:
-            price_text = used_price_element.get_text(strip=True)
-            price_str = re.sub(r'[^\d,.]', '', price_text)
-            if ',' in price_str and '.' in price_str:
-                price_str = price_str.replace('.', '').replace(',', '.')
-            elif ',' in price_str:
-                price_str = price_str.replace(',', '.')
-
-            if price_str:
-                return float(price_str)
     except (AttributeError, ValueError) as e:
-        print(f"Could not find or parse used price on product page: {e}")
+        print(f"Could not find or parse used price: {e}")
 
     return None
-
 
 def findUsedPrice(soup):
     """
     Finds the best used price from the offer listing page.
     """
     try:
-        # The new selector for the container of all offers
-        offer_list = soup.select_one("#aod-offer-list, #olpOfferList")
+        offer_list = soup.select_one("#aod-offer-list")
         if not offer_list:
             return None
-
-        # The new selector for individual offer containers
-        offers = offer_list.select(".aod-offer, .olpOffer")
+        offers = offer_list.select("#aod-offer")
         for offer in offers:
-            # The new selector for the condition text
-            condition_element = offer.select_one(".aod-offer-heading, .olpCondition")
-            if condition_element and any(keyword in condition_element.get_text(strip=True) for keyword in used_condition_keywords):
-                # The new selector for the price
-                price_element = offer.select_one(".a-price .a-offscreen, .olpOfferPrice")
-                if price_element:
-                    price_text = price_element.get_text(strip=True)
-                    price_str = re.sub(r'[^\d,.]', '', price_text)
-                    if ',' in price_str and '.' in price_str:
-                        price_str = price_str.replace('.', '').replace(',', '.')
-                    elif ',' in price_str:
-                        price_str = price_str.replace(',', '.')
+            condition_element = offer.select_one("#aod-offer-heading span.a-text-bold")
+            if condition_element and "De 2ª mano" in condition_element.get_text(strip=True):
+                price_whole_element = offer.select_one('span.a-price-whole')
+                price_fraction_element = offer.select_one('span.a-price-fraction')
+                if price_whole_element:
+                    price_whole_text = price_whole_element.get_text(strip=True).replace(',', '')
+                    price_fraction_text = price_fraction_element.get_text(strip=True)
+                    full_price_float = float(f"{price_whole_text}.{price_fraction_text}")
 
-                    if price_str:
-                        return float(price_str)
+                    if full_price_float:
+                        return float(full_price_float)
 
     except (AttributeError, ValueError) as e:
         print(f"Could not find or parse used price: {e}")
@@ -215,9 +191,10 @@ def scrape_wishlist_page(page, soup, base_url):
     items = soup.find_all(attrs={"data-itemid": True})
 
     for item in items:
-        price = findPrice(item)
+        #price = findPrice(item)
         url = findURLtoITEM(item, base_url)
         priceUsed = None
+        price = None
 
         if url:
             try:
@@ -225,20 +202,17 @@ def scrape_wishlist_page(page, soup, base_url):
                 page.goto(url, wait_until="load", timeout=60000)
                 product_content = page.content()
                 product_soup = BeautifulSoup(product_content, "html.parser")
-                priceUsed = findUsedPriceOnProductPage(product_soup)
+                match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                if match:
+                    asin = match.group(1)
+                    offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
 
-                # If not found on the product page, check the offer-listing page
-                if priceUsed is None:
-                    match = re.search(r'/dp/([A-Z0-9]{10})', url)
-                    if match:
-                        asin = match.group(1)
-                        offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
-
-                        print(f"Scraping used price for {asin} from {offer_url}")
-                        page.goto(offer_url, wait_until="load", timeout=60000)
-                        offer_content = page.content()
-                        offer_soup = BeautifulSoup(offer_content, "html.parser")
-                        priceUsed = findUsedPrice(offer_soup)
+                    print(f"Scraping price for {asin} from {offer_url}")
+                    page.goto(offer_url, wait_until="load", timeout=60000)
+                    offer_content = page.content()
+                    offer_soup = BeautifulSoup(offer_content, "html.parser")
+                    price = findPrice(offer_soup)
+                    priceUsed = findUsedPrice(offer_soup)
             except PlaywrightTimeoutError:
                 print(f"Timeout while trying to load page for {url}")
             except Exception as e:
@@ -437,8 +411,8 @@ if __name__ == "__main__":
             notifyUpdates(filteredItems)
 
         print("Check complete.")
-        # s.enter(120, 1, main, (sc,))
+        s.enter(120, 1, main, (sc,))
 
-    # s.enter(1, 1, main, (s,))
-    # s.run()
+    s.enter(1, 1, main, (s,))
+    s.run()
     main(s)

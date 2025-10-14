@@ -169,20 +169,22 @@ def findItem(items, wishItemId):
 
 
 def buildBody(items):
-    #body = "The following items have updated prices\n\n"
-    body = ''
+    body = "🛍️ *Amazon Price Updates* 🛍️\n\n"
     for item in items:
-        itemId = item["id"]
-        title = item["title"][0:25]
-        savings = f"{item['savings']}".rjust(6)
+        title = item["title"]
+        savings = item['savings']
         price = item["price"]
-        priceOld = item["history"]["price"]
         priceUsed = item["priceUsed"]
-        priceUsedOld = item["history"]["priceUsed"]
-        bestUsedPrice = item['bestUsedPrice']
         url = item["url"]
-        #body += '***********************************\n'
-        body += f"{savings}% - [{title}]({url})\n({locale.currency(price, grouping=True) if price else "N/A"} -> {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}) - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else '-'}\n---------------\n"
+
+        # Format the message with Markdown
+        body += f"› [{title}]({url})\n"
+        body += f"  - *Price*: {locale.currency(price, grouping=True) if price else 'N/A'}\n"
+        body += f"  - *Used Price*: {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}\n"
+
+        savings_emoji = "🎉" if savings > 0 else " "
+        body += f"  - *Savings*: {savings:.2f}% {savings_emoji}\n"
+        body += "---\n"
 
     return body
     

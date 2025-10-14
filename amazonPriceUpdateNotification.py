@@ -319,7 +319,7 @@ def sendTelegram(body):
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()  # Raise an exception for bad status codes
-        print("Telegram notification sent successfully.")
+        #print("Telegram notification sent successfully.")
     except requests.exceptions.RequestException as e:
         print(f"Failed to send Telegram notification: {e}")
        
@@ -387,14 +387,14 @@ def scrape_wishlists(urls):
         page = browser.new_page()
 
         for url in urls:
-            print(f"Scraping {url}")
+            #print(f"Scraping {url}")
             try:
                 page.goto(url, wait_until="load", timeout=60000)
                 html_text = page.content()
                 soup = BeautifulSoup(html_text, "html.parser")
                 
                 list_items = soup.find_all(attrs={"data-itemid": True})
-                printItemsUrls(list_items)
+                #printItemsUrls(list_items)
                 
                 items.extend(list_items)
                 
@@ -413,14 +413,18 @@ def scrape_wishlists(urls):
 if __name__ == "__main__":
     s = sched.scheduler(time.time, time.sleep)
     
-    print("Scraping wishlist items...")
+    print("Scraping wishlist...")
     items = scrape_wishlists(wishlistURLs)
         
-    def main(sc, items):
+    # The main function now accepts an 'iteration_count'
+    def main(sc, items, iteration_count):
         
-        
+        # Every 10 iterations, re-scrape the main wishlist URLs to find new or removed items
+        if iteration_count > 0 and iteration_count % 10 == 0:
+            print("Refreshing full wishlist...")
+            items = scrape_wishlists(wishlistURLs)
+            
         scrappedItems = scrape_wishlist_page(items)
-        scrappedItems.extend(scrappedItems)
 
         # First, clean up any items that are no longer on the wishlist
         cleanupRemovedItems(scrappedItems)
@@ -430,15 +434,17 @@ if __name__ == "__main__":
 
         # Filter for items with significant price drops
         filteredItems = filterUpdates(updatedItems)
-        print(f"Number of items to notify: {len(filteredItems)}") 
+        #print(f"Number of items to notify: {len(filteredItems)}") 
 
         # Notify if there are any items that meet the criteria
-        if filteredItems:
+        if len(filteredItems) > 0:
             notifyUpdates(filteredItems)
 
-        print("Check complete.")
-        s.enter(300, 1, main, (sc, items))
+        #print("Check complete.")
+        # Schedule the next run and increment the iteration_count
+        s.enter(20, 1, main, (sc, items, iteration_count + 1))
 
-    s.enter(1, 1, main, (s,items))
+    # Schedule the first run with iteration_count starting at 1
+    s.enter(1, 1, main, (s, items, 1))
     s.run()
-    main(s)
+    # The final main(s) call is not needed as s.run() starts the scheduler loop.

@@ -168,29 +168,38 @@ def findItem(items, wishItemId):
     return found
 
 
+def escape_markdown_v2(text):
+    """Escapes characters for Telegram's MarkdownV2 format."""
+    # Chars to escape: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    escape_chars = r'([_*\[\]()~`>#\+\-=|{}.!])'
+    return re.sub(escape_chars, r'\\\1', text)
+
+
 def buildBody(items):
     body = ""
     for item in items:
         title = item["title"]
         # Truncate title to max 25 characters
         truncated_title = (title[:22] + '...') if len(title) > 25 else title
+        escaped_title = escape_markdown_v2(truncated_title)
 
         url = item["url"]
         price = item["price"]
         priceUsed = item["priceUsed"]
         savings = item['savings']
 
-        # Line 1: Italicized, truncated title as a link
-        body += f"[*__{truncated_title}*]({url})\n"
+        # Line 1: Italicized, truncated title as a link. _[text](url)_
+        body += f"_[{escaped_title}]({url})_\n"
 
         # Line 2: Price, Used Price, and Savings
-        price_str = f"Price: {locale.currency(price, grouping=True) if price else 'N/A'}"
-        used_price_str = f"Used: {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}"
+        price_str = escape_markdown_v2(f"Price: {locale.currency(price, grouping=True) if price else 'N/A'}")
+        used_price_str = escape_markdown_v2(f"Used: {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}")
         savings_emoji = "🎉" if savings > 0 else ""
-        savings_str = f"Savings: {savings:.2f}% {savings_emoji}".strip()
+        savings_str = escape_markdown_v2(f"Savings: {savings:.2f}% {savings_emoji}".strip())
 
-        body += f"{price_str} | {used_price_str} | {savings_str}\n"
-        body += "---\n"
+        separator = escape_markdown_v2(" | ")
+        body += f"{price_str}{separator}{used_price_str}{separator}{savings_str}\n"
+        body += escape_markdown_v2("---\n")
 
     return body.strip()
     
@@ -315,7 +324,7 @@ def sendTelegram(body):
         print("Telegram token or chat_id not provided in properties file. Skipping notification.")
         return
 
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&disable_web_page_preview=true&parse_mode=Markdown&text={body}"
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&disable_web_page_preview=true&parse_mode=MarkdownV2&text={body}"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()  # Raise an exception for bad status codes

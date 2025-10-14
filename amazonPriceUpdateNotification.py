@@ -169,24 +169,30 @@ def findItem(items, wishItemId):
 
 
 def buildBody(items):
-    body = "🛍️ *Amazon Price Updates* 🛍️\n\n"
+    body = ""
     for item in items:
         title = item["title"]
-        savings = item['savings']
+        # Truncate title to max 25 characters
+        truncated_title = (title[:22] + '...') if len(title) > 25 else title
+
+        url = item["url"]
         price = item["price"]
         priceUsed = item["priceUsed"]
-        url = item["url"]
+        savings = item['savings']
 
-        # Format the message with Markdown
-        body += f"› [{title}]({url})\n"
-        body += f"  - *Price*: {locale.currency(price, grouping=True) if price else 'N/A'}\n"
-        body += f"  - *Used Price*: {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}\n"
+        # Line 1: Italicized, truncated title as a link
+        body += f"[*__{truncated_title}*]({url})\n"
 
-        savings_emoji = "🎉" if savings > 0 else " "
-        body += f"  - *Savings*: {savings:.2f}% {savings_emoji}\n"
+        # Line 2: Price, Used Price, and Savings
+        price_str = f"Price: {locale.currency(price, grouping=True) if price else 'N/A'}"
+        used_price_str = f"Used: {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}"
+        savings_emoji = "🎉" if savings > 0 else ""
+        savings_str = f"Savings: {savings:.2f}% {savings_emoji}".strip()
+
+        body += f"{price_str} | {used_price_str} | {savings_str}\n"
         body += "---\n"
 
-    return body
+    return body.strip()
     
 def scrape_wishlist_page(items):
     notification_list = []

@@ -74,6 +74,7 @@ def findPrice(soup):
     
     try:
         pinned_offer = soup.select_one("#aod-pinned-offer")
+                        
         if not pinned_offer:
             return None
         price_whole_element = pinned_offer.select_one('span.a-price-whole')
@@ -181,7 +182,7 @@ def buildBody(items):
         bestUsedPrice = item['bestUsedPrice']
         url = item["url"]
         #body += '***********************************\n'
-        body += f'{savings}% - [{title}]({url})\n({locale.currency(price, grouping=True) if price else "N/A"} -> {locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"}) - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else "-"}\n---------------\n'
+        body += f"{savings}% - [{title}]({url})\n({locale.currency(price, grouping=True) if price else "N/A"} -> {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}) - Best:{locale.currency(bestUsedPrice, grouping=True) if bestUsedPrice else '-'}\n---------------\n"
 
     return body
     
@@ -193,51 +194,47 @@ def scrape_wishlist_page(items):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        try:
+            for item in items:
+                #price = findPrice(item)
+                url = findURLtoITEM(item, base_url)
+                priceUsed = None
+                price = None
 
-        for item in items:
-            #price = findPrice(item)
-            url = findURLtoITEM(item, base_url)
-            priceUsed = None
-            price = None
+                if url:
+                        match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                        if match:
+                            asin = match.group(1)
+                            offer_url = f"{base_url}/dp/{asin}/?aod=1&th=1"
+                            page.goto(offer_url, wait_until="load", timeout=60000)
+                            
+                            page.wait_for_timeout(10000)
+                            offer_content = page.content()
+                            offer_soup = BeautifulSoup(offer_content, "html.parser")
+                            price = findPrice(offer_soup)                        
+                            priceUsed = findUsedPrice(offer_soup)
 
-            if url:
-                try:
-                    match = re.search(r'/dp/([A-Z0-9]{10})', url)
-                    if match:
-                        asin = match.group(1)
-                        offer_url = f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used"
-                        page.goto(offer_url, wait_until="load", timeout=60000)
-                        offer_content = page.content()
-                        offer_soup = BeautifulSoup(offer_content, "html.parser")
-                        price = findPrice(offer_soup)
-                        priceUsed = findUsedPrice(offer_soup)
-                except PlaywrightTimeoutError:
-                    print(f"Timeout while trying to load page for {url}")
-                except Exception as e:
-                    print(f"An unexpected error occurred while scraping used price for {url}: {e}")
+                savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
-            savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
+                scrappedItem = {
+                    "id": findId(item),
+                    "title": findTitle(item),
+                    "price": price,
+                    "priceUsed": priceUsed,
+                    "history": {"price": [], "priceUsed": []},
+                    "savings": savings,
+                    "bestUsedPrice": priceUsed,
+                    "url": url
+                }
 
-            scrappedItem = {
-                "id": findId(item),
-                "title": findTitle(item),
-                "price": price,
-                "priceUsed": priceUsed,
-                "history": {"price": [], "priceUsed": []},
-                "savings": savings,
-                "bestUsedPrice": priceUsed,
-                "url": url
-            }
+                scrappedItems.append(scrappedItem)
 
-            scrappedItems.append(scrappedItem)
-            
-            # Generate a random float between 5 and 15
-            random_delay = random.uniform(5, 15)
-            # Pause the execution for the random amount of time
-            time.sleep(random_delay)
-
-
-        browser.close()
+        except PlaywrightTimeoutError:
+            print(f"Timeout while trying to load page for {url}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+        finally:
+            browser.close()    
     return scrappedItems
 
 

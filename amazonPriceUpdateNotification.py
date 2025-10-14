@@ -188,8 +188,8 @@ def buildBody(items):
         priceUsed = item["priceUsed"]
         savings = item['savings']
 
-        # Line 1: Italicized, truncated title as a link. _[text](url)_
-        body += f"_[{escaped_title}]({url})_\n"
+        # Line 1: Plain, truncated title as a link. [text](url)
+        body += f"[{escaped_title}]({url})\n"
 
         # Line 2: Price, Used Price, and Savings
         price_str = escape_markdown_v2(f"Price: {locale.currency(price, grouping=True) if price else 'N/A'}")
@@ -198,8 +198,7 @@ def buildBody(items):
         savings_str = escape_markdown_v2(f"Savings: {savings:.2f}% {savings_emoji}".strip())
 
         separator = escape_markdown_v2(" | ")
-        body += f"{price_str}{separator}{used_price_str}{separator}{savings_str}\n"
-        body += escape_markdown_v2("---\n")
+        body += f"{price_str}{separator}{used_price_str}{separator}{savings_str}\n\n"
 
     return body.strip()
     

@@ -183,7 +183,7 @@ def buildBody(items):
         truncated_title = (title[:22] + '...') if len(title) > 25 else title
         escaped_title = escape_markdown_v2(truncated_title)
 
-        url = item["url"]
+        url = escape_markdown_v2(item["url"].split('?')[0])
         price = item["price"]
         priceUsed = item["priceUsed"]
         savings = item['savings']
@@ -194,8 +194,7 @@ def buildBody(items):
         # Line 2: Price, Used Price, and Savings
         price_str = escape_markdown_v2(f"Price: {locale.currency(price, grouping=True) if price else 'N/A'}")
         used_price_str = escape_markdown_v2(f"Used: {locale.currency(priceUsed, grouping=True) if priceUsed else 'N/A'}")
-        savings_emoji = "🎉" if savings > 0 else ""
-        savings_str = escape_markdown_v2(f"Savings: {savings:.2f}% {savings_emoji}".strip())
+        savings_str = escape_markdown_v2(f"Savings: {savings:.2f}%".strip())
 
         separator = escape_markdown_v2(" | ")
         body += f"{price_str}{separator}{used_price_str}{separator}{savings_str}\n\n"

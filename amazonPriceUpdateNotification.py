@@ -81,7 +81,7 @@ def findPrice(soup):
         price_fraction_element = pinned_offer.select_one('span.a-price-fraction')
         
         if price_whole_element:
-            price_whole_text = price_whole_element.get_text(strip=True).replace(',', '')
+            price_whole_text = price_whole_element.get_text(strip=True).replace(',', '').replace('.', '')
             price_fraction_text = price_fraction_element.get_text(strip=True)
             full_price_float = float(f"{price_whole_text}.{price_fraction_text}")
 
@@ -108,7 +108,7 @@ def findUsedPrice(soup):
                 price_whole_element = offer.select_one('span.a-price-whole')
                 price_fraction_element = offer.select_one('span.a-price-fraction')
                 if price_whole_element:
-                    price_whole_text = price_whole_element.get_text(strip=True).replace(',', '')
+                    price_whole_text = price_whole_element.get_text(strip=True).replace(',', '').replace('.', '')
                     price_fraction_text = price_fraction_element.get_text(strip=True)
                     full_price_float = float(f"{price_whole_text}.{price_fraction_text}")
 

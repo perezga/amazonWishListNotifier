@@ -15,6 +15,19 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from datetime import datetime
 
 import sched, time
+from dataclasses import dataclass, field
+from typing import Optional, List
+
+@dataclass
+class WishlistItem:
+    id: str
+    title: str
+    url: Optional[str]
+    price: Optional[float]
+    priceUsed: Optional[float]
+    savings: float = 0.0
+    bestUsedPrice: Optional[float] = None
+    history: dict = field(default_factory=lambda: {"price": [], "priceUsed": []})
 
 wish_list = {}
 notified_items = {}
@@ -153,7 +166,7 @@ def itemsToMap(items):
 
 def cleanupRemovedItems(items):
     for wishItem in wish_list.copy().values():
-        itemId = wishItem["id"]
+        itemId = wishItem.id
 
         if not findItem(items, itemId):
             print(f"Removing {wishItem}")
@@ -163,7 +176,7 @@ def cleanupRemovedItems(items):
 def findItem(items, wishItemId):
     found = False
     for item in items:
-        if wishItemId == item["id"]:
+        if wishItemId == item.id:
             found = True
             break
     return found
@@ -179,15 +192,15 @@ def escape_markdown_v2(text):
 def buildBody(items):
     body = ""
     for item in items:
-        title = item["title"]
+        title = item.title
         # Truncate title to max 25 characters
         truncated_title = (title[:22] + '...') if len(title) > 25 else title
         escaped_title = escape_markdown_v2(truncated_title)
 
-        url = escape_markdown_v2(item["url"].split('?')[0])
-        price = item["price"]
-        priceUsed = item["priceUsed"]
-        savings = item['savings']
+        url = escape_markdown_v2(item.url.split('?')[0])
+        price = item.price
+        priceUsed = item.priceUsed
+        savings = item.savings
 
         # Line 1: Plain, truncated title as a link. [text](url)
         body += f"[{escaped_title}]({url})\n"
@@ -232,16 +245,15 @@ def scrape_wishlist_page(items):
 
                 savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
-                scrappedItem = {
-                    "id": findId(item),
-                    "title": findTitle(item),
-                    "price": price,
-                    "priceUsed": priceUsed,
-                    "history": {"price": [], "priceUsed": []},
-                    "savings": savings,
-                    "bestUsedPrice": priceUsed,
-                    "url": url
-                }
+                scrappedItem = WishlistItem(
+                    id=findId(item),
+                    title=findTitle(item),
+                    price=price,
+                    priceUsed=priceUsed,
+                    savings=savings,
+                    bestUsedPrice=priceUsed,
+                    url=url
+                )
 
                 scrappedItems.append(scrappedItem)
 
@@ -257,26 +269,26 @@ def scrape_wishlist_page(items):
 def updateWishList(newItems):
     updatedItems = []
     for newItem in newItems:
-        itemId = newItem["id"]
+        itemId = newItem.id
         item = wish_list.get(itemId)
 
         if item is None:
             wish_list[itemId] = newItem
             updatedItems.append(newItem)
-        elif item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
-            item["history"]["price"].insert(0, item["price"])
-            item["history"]["price"] = item["history"]["price"][:2]
-            item["history"]["priceUsed"].insert(0, item["priceUsed"])
-            item["history"]["priceUsed"] = item["history"]["priceUsed"][:2]
+        elif item.price != newItem.price or item.priceUsed != newItem.priceUsed:
+            item.history["price"].insert(0, item.price)
+            item.history["price"] = item.history["price"][:2]
+            item.history["priceUsed"].insert(0, item.priceUsed)
+            item.history["priceUsed"] = item.history["priceUsed"][:2]
 
-            item["price"] = newItem["price"]
-            item["priceUsed"] = newItem["priceUsed"]
-            item["savings"] = newItem["savings"]
+            item.price = newItem.price
+            item.priceUsed = newItem.priceUsed
+            item.savings = newItem.savings
 
             # Update bestUsedPrice if the new used price is better
-            if newItem["priceUsed"] is not None:
-                if item.get("bestUsedPrice") is None or newItem["priceUsed"] < item["bestUsedPrice"]:
-                    item["bestUsedPrice"] = newItem["priceUsed"]
+            if newItem.priceUsed is not None:
+                if item.bestUsedPrice is None or newItem.priceUsed < item.bestUsedPrice:
+                    item.bestUsedPrice = newItem.priceUsed
 
             updatedItems.append(item)
 
@@ -287,7 +299,7 @@ def filterUpdates(items):
     filteredItems = []
     for item in items:
         # We only notify if there's a valid used price that meets the savings criteria
-        if isSavingsGreaterThanStrategy(item["price"], item["priceUsed"], minSavingsPercentage):
+        if isSavingsGreaterThanStrategy(item.price, item.priceUsed, minSavingsPercentage):
             filteredItems.append(item)
             printItem(item, True)
         else:
@@ -299,12 +311,12 @@ def filterUpdates(items):
 def filter_duplicate_notifications(items):
     non_duplicate_items = []
     for item in items:
-        item_id = item["id"]
+        item_id = item.id
         notified_item = notified_items.get(item_id)
 
-        if notified_item and notified_item.get("price") == item["price"] and notified_item.get("priceUsed") == item["priceUsed"]:
+        if notified_item and notified_item.get("price") == item.price and notified_item.get("priceUsed") == item.priceUsed:
             dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            print(f"{dt_string} {'SKIPPING DUPLICATE'} {item['title'][0:50]:55}")
+            print(f"{dt_string} {'SKIPPING DUPLICATE'} {item.title[0:50]:55}")
         else:
             non_duplicate_items.append(item)
 
@@ -323,9 +335,9 @@ def isSavingsGreaterThanStrategy(price, priceUsed, minSavingsPercentage):
 
 def store_notified_item(items):
     for item in items:
-        notified_items[item["id"]] = {
-            "price": item["price"],
-            "priceUsed": item["priceUsed"]
+        notified_items[item.id] = {
+            "price": item.price,
+            "priceUsed": item.priceUsed
         }
 
 def notifyUpdates(items):
@@ -374,10 +386,10 @@ def sendEmail(body):
 def get_subject(items):
     numItems = len(items)
     item = items[0]
-    title = item['title'][0:10]
-    price = item['price']
+    title = item.title[0:10]
+    price = item.price
     priceLocale = locale.currency(price, grouping=True) if price else "N/A"
-    priceUsed = item['priceUsed']
+    priceUsed = item.priceUsed
     priceUsedLocale = locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"
 
     return f"AMAZON{numItems}): {title}...({priceLocale}/{priceUsedLocale})"
@@ -387,16 +399,16 @@ def printItems(items):
         printItem(item, False)
         
 def printItem(item, isSent):
-    savings = f"{item['savings']}".rjust(6)
-    price = f"{item['price']}".rjust(7)
-    used = f"{item['priceUsed']}".rjust(7)
-    bestUsedPrice = f"{item['bestUsedPrice']}".rjust(7)
+    savings = f"{item.savings}".rjust(6)
+    price = f"{item.price}".rjust(7)
+    used = f"{item.priceUsed}".rjust(7)
+    bestUsedPrice = f"{item.bestUsedPrice}".rjust(7)
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    print(f"{dt_string} {'NOTIFIED' if isSent else '        '} {item['title'][0:50]:55}\tsavings:{savings}% \tprice:{price} \tused: {used}\tbestUsed:{bestUsedPrice}\tHistory(price/used): {item['history']['price']}/{item['history']['priceUsed']}")
+    print(f"{dt_string} {'NOTIFIED' if isSent else '        '} {item.title[0:50]:55}\tsavings:{savings}% \tprice:{price} \tused: {used}\tbestUsed:{bestUsedPrice}\tHistory(price/used): {item.history['price']}/{item.history['priceUsed']}")
     	
 def printItemsTitles(items):
     for item in items:
-    	print(f"{item['title'][0:60]:60}")
+	print(f"{item.title[0:60]:60}")
 
 def printItemsUrls(list_items):
     

@@ -453,6 +453,9 @@ def scrape_wishlists(urls):
 
 
 if __name__ == "__main__":
+
+    sendTelegram("Amazon Notification service RESTARTING")
+
     s = sched.scheduler(time.time, time.sleep)
     
     print("Scraping wishlist...")

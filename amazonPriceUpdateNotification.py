@@ -17,6 +17,7 @@ from datetime import datetime
 import sched, time
 
 wish_list = {}
+notified_items = {}
 try:
     locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
 except locale.Error as e:
@@ -294,6 +295,21 @@ def filterUpdates(items):
 
     return filteredItems
 
+
+def filter_duplicate_notifications(items):
+    non_duplicate_items = []
+    for item in items:
+        item_id = item["id"]
+        notified_item = notified_items.get(item_id)
+
+        if notified_item and notified_item.get("price") == item["price"] and notified_item.get("priceUsed") == item["priceUsed"]:
+            dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            print(f"{dt_string} {'SKIPPING DUPLICATE'} {item['title'][0:50]:55}")
+        else:
+            non_duplicate_items.append(item)
+
+    return non_duplicate_items
+
 # True only if Used price is X percent smaller than the normal price.
 #Where X is minSavingsPercentage
 def isSavingsGreaterThanStrategy(price, priceUsed, minSavingsPercentage):
@@ -304,6 +320,13 @@ def isSavingsGreaterThanStrategy(price, priceUsed, minSavingsPercentage):
         return False
 
 
+
+def store_notified_item(items):
+    for item in items:
+        notified_items[item["id"]] = {
+            "price": item["price"],
+            "priceUsed": item["priceUsed"]
+        }
 
 def notifyUpdates(items):
     # if not empty
@@ -441,11 +464,14 @@ if __name__ == "__main__":
 
         # Filter for items with significant price drops
         filteredItems = filterUpdates(updatedItems)
-        #print(f"Number of items to notify: {len(filteredItems)}") 
+        #print(f"Number of items to notify: {len(filteredItems)}")
+
+        non_duplicate_items = filter_duplicate_notifications(filteredItems)
 
         # Notify if there are any items that meet the criteria
-        if len(filteredItems) > 0:
-            notifyUpdates(filteredItems)
+        if len(non_duplicate_items) > 0:
+            notifyUpdates(non_duplicate_items)
+            store_notified_item(non_duplicate_items)
 
         #print("Check complete.")
         # Schedule the next run and increment the iteration_count

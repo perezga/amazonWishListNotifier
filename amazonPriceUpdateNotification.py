@@ -12,13 +12,37 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from datetime import datetime
 
 import sched, time
+import logging
+import os
+from logging.handlers import TimedRotatingFileHandler
 
+# Configure logging
+def setup_logging():
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+
+    log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    # Generate the log filename with the current date
+    log_filename = f"logs/logs_{datetime.now().strftime('%Y%m%d')}.txt"
+
+    # Use a FileHandler to log to a file with the specified name
+    log_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    log_handler.setFormatter(log_formatter)
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(log_handler)
+
+    return logger
+
+logger = setup_logging()
 wish_list = {}
 notified_items = {}
 try:
     locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')
 except locale.Error as e:
-    print(f"Could not set locale: {e}. Prices will be displayed without currency formatting.")
+    logger.error(f"Could not set locale: {e}. Prices will be displayed without currency formatting.")
 
 configs: Properties = Properties()
 with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
@@ -53,11 +77,11 @@ def findTitle(item):
         if title_element and title_element.has_attr('title'):
             return title_element["title"]
         else:
-            print(f"Title attribute not found for item {itemId}")
+            logger.warning(f"Title attribute not found for item {itemId}")
             return "Title not found"
     except (TypeError, KeyError) as e:
         itemId = item.get("data-itemid", "N/A")
-        print(f"Could not find title for item {itemId}: {e}")
+        logger.error(f"Could not find title for item {itemId}: {e}")
         return "Title not found"
 
 
@@ -80,7 +104,7 @@ def findPrice(soup):
                 return float(full_price_float)
 
     except (AttributeError, ValueError) as e:
-        print(f"Could not find or parse used price: {e}")
+        logger.error(f"Could not find or parse used price: {e}")
 
     return None
 
@@ -107,7 +131,7 @@ def findUsedPrice(soup):
                         return float(full_price_float)
 
     except (AttributeError, ValueError) as e:
-        print(f"Could not find or parse used price: {e}")
+        logger.error(f"Could not find or parse used price: {e}")
 
     return None
 
@@ -126,10 +150,10 @@ def findURLtoITEM(item, base_url):
                 return f"{base_url}{url}"
             return url
         else:
-            print(f"URL not found for item {itemId}")
+            logger.warning(f"URL not found for item {itemId}")
             return None
     except (TypeError, KeyError) as e:
-        print(f"Error finding URL for item {itemId}: {e}")
+        logger.error(f"Error finding URL for item {itemId}: {e}")
     return None
 
 # Remove items not in the wish list anymore. i.e. removed from actual amazon wish list.
@@ -146,7 +170,7 @@ def cleanupRemovedItems(items):
         itemId = wishItem["id"]
 
         if not findItem(items, itemId):
-            print(f"Removing {wishItem}")
+            logger.info(f"Removing {wishItem}")
             del wish_list[itemId]
 
 
@@ -236,9 +260,9 @@ def scrape_wishlist_page(items):
                 scrappedItems.append(scrappedItem)
 
         except PlaywrightTimeoutError:
-            print(f"Timeout while trying to load page for {url}")
+            logger.error(f"Timeout while trying to load page for {url}")
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            logger.error(f"An unexpected error occurred: {e}")
         finally:
             browser.close()    
     return scrappedItems
@@ -293,8 +317,7 @@ def filter_duplicate_notifications(items):
         notified_item = notified_items.get(item_id)
 
         if notified_item and notified_item.get("price") == item["price"] and notified_item.get("priceUsed") == item["priceUsed"]:
-            dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            print(f"{dt_string} {'SKIPPING DUPLICATE'} {item['title'][0:50]:55}")
+            logger.info(f"SKIPPING DUPLICATE {item['title'][0:50]:55}")
         else:
             non_duplicate_items.append(item)
 
@@ -328,20 +351,20 @@ def notifyUpdates(items):
             case "EMAIL":
                 sendEmail(body)
             case _:
-                print("Set a notification method TELEGRAM|EMAIL in properties")
+                logger.warning("Set a notification method TELEGRAM|EMAIL in properties")
 
 def sendTelegram(body):
     if not TOKEN or not chat_id:
-        print("Telegram token or chat_id not provided in properties file. Skipping notification.")
+        logger.warning("Telegram token or chat_id not provided in properties file. Skipping notification.")
         return
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&disable_web_page_preview=true&parse_mode=MarkdownV2&text={body}"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()  # Raise an exception for bad status codes
-        #print("Telegram notification sent successfully.")
+        #logger.info("Telegram notification sent successfully.")
     except requests.exceptions.RequestException as e:
-        print(f"Failed to send Telegram notification: {e}")
+        logger.error(f"Failed to send Telegram notification: {e}")
        
 def sendEmail(body):
     text_type = 'plain'  # or 'html'
@@ -355,11 +378,11 @@ def sendEmail(body):
         with smtplib.SMTP_SSL(host, port, timeout=10) as server:
             server.login(username, password)
             server.send_message(msg)
-            print("Email notification sent successfully.")
+            logger.info("Email notification sent successfully.")
     except smtplib.SMTPException as e:
-        print(f"Failed to send email notification (SMTP Error): {e}")
+        logger.error(f"Failed to send email notification (SMTP Error): {e}")
     except Exception as e:
-        print(f"An unexpected error occurred while sending email: {e}")
+        logger.error(f"An unexpected error occurred while sending email: {e}")
 
 def get_subject(items):
     numItems = len(items)
@@ -381,23 +404,32 @@ def printItem(item, isSent):
     price = f"{item['price']}".rjust(7)
     used = f"{item['priceUsed']}".rjust(7)
     bestUsedPrice = f"{item['bestUsedPrice']}".rjust(7)
-    dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    print(f"{dt_string} {'NOTIFIED' if isSent else '        '} {item['title'][0:50]:55}\tsavings:{savings}% \tprice:{price} \tused: {used}\tbestUsed:{bestUsedPrice}\tHistory(price/used): {item['history']['price']}/{item['history']['priceUsed']}")
+
+    log_message = (
+        f"{'NOTIFIED' if isSent else '        '} "
+        f"{item['title'][0:50]:55}\t"
+        f"savings:{savings}% \t"
+        f"price:{price} \t"
+        f"used: {used}\t"
+        f"bestUsed:{bestUsedPrice}\t"
+        f"History(price/used): {item['history']['price']}/{item['history']['priceUsed']}"
+    )
+    logger.info(log_message)
 
 def printItemsTitles(items):
     for item in items:
-        print(f"{item['title'][0:60]:60}")
+        logger.info(f"{item['title'][0:60]:60}")
 
 def printItemsUrls(list_items):
     
     base_url = "https://www.amazon.es"
-    print(f"Num of items {len(list_items)}")
+    logger.info(f"Num of items {len(list_items)}")
     for item in list_items:
                     url = findURLtoITEM(item, base_url)
 
                     match = re.search(r'/dp/([A-Z0-9]{10})', url)
                     asin = match.group(1)
-                    print(f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used")
+                    logger.info(f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used")
 
 def scrape_wishlists(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -420,10 +452,10 @@ def scrape_wishlists(urls):
                 
                 
             except PlaywrightTimeoutError:
-                print(f"Timeout while trying to load wishlist {url}")
+                logger.error(f"Timeout while trying to load wishlist {url}")
                 continue
             except Exception as e:
-                print(f"Error scraping {url}: {e}")
+                logger.error(f"Error scraping {url}: {e}")
                 continue
 
         browser.close()
@@ -435,7 +467,7 @@ if __name__ == "__main__":
 
     sendTelegram("Amazon Notification service RESTARTING")
 
-    print("Scraping wishlist...")
+    logger.info("Scraping wishlist...")
     items = scrape_wishlists(wishlistURLs)
         
     # The main function now accepts an 'iteration_count'
@@ -443,7 +475,7 @@ if __name__ == "__main__":
         
         # Every 10 iterations, re-scrape the main wishlist URLs to find new or removed items
         if iteration_count > 0 and iteration_count % 10 == 0:
-            print("Refreshing full wishlist...")
+            logger.info("Refreshing full wishlist...")
             items = scrape_wishlists(wishlistURLs)
             
         scrappedItems = scrape_wishlist_page(items)

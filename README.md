@@ -34,3 +34,22 @@ Script writen in Python to notify price changes of Products added in your Amazon
 
     2 - Run the script amazonPriceUpdateNotifier
         python amazonPriceUpdateNotification.py
+
+## Running with Docker Compose
+
+**Prerequisites**
+
+    Docker and Docker Compose
+
+**Instructions**
+
+    1 - Configure the `amazonPriceUpdateNotifier.properties` file as described above.
+
+    2 - Build and run the container in detached mode:
+        docker-compose up --build -d
+
+    3 - To view the logs:
+        docker-compose logs -f
+
+    4 - To stop the container:
+        docker-compose down

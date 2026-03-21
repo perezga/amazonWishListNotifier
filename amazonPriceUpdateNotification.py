@@ -48,7 +48,7 @@ used_condition_keywords = configs.get("used.condition.keywords").data.split(',')
 
 def findTitle(item):
     try:
-        itemId = item["data-itemid"]
+        itemId = findId(item)
         title_element = item.find("a", id=f"itemName_{itemId}")
         if title_element and title_element.has_attr('title'):
             return title_element["title"]
@@ -56,7 +56,7 @@ def findTitle(item):
             print(f"Title attribute not found for item {itemId}")
             return "Title not found"
     except (TypeError, KeyError) as e:
-        itemId = item.get("data-itemid", "N/A")
+        itemId = item.get("data-itemid", item.get("id", "item_N/A").replace("item_", ""))
         print(f"Could not find title for item {itemId}: {e}")
         return "Title not found"
 
@@ -113,10 +113,14 @@ def findUsedPrice(soup):
 
 
 def findId(item):
-    return item["data-itemid"]
+    if item.has_attr("data-itemid"):
+        return item["data-itemid"]
+    if item.has_attr("id") and item["id"].startswith("item_"):
+        return item["id"].replace("item_", "")
+    return "N/A"
     
 def findURLtoITEM(item, base_url):
-    itemId = item.get("data-itemid", "N/A")
+    itemId = findId(item)
     try:
         link = item.find("a", id=f"itemName_{itemId}")
         if link and link.has_attr('href'):
@@ -136,7 +140,7 @@ def findURLtoITEM(item, base_url):
 def itemsToMap(items):
     itemsMap = {}
     for item in items:
-        itemsMap[item["data-itemid"]] = item
+        itemsMap[findId(item)] = item
 
     return itemsMap
 
@@ -208,17 +212,24 @@ def scrape_wishlist_page(items):
                 price = None
 
                 if url:
+                    try:
                         match = re.search(r'/dp/([A-Z0-9]{10})', url)
                         if match:
                             asin = match.group(1)
                             offer_url = f"{base_url}/dp/{asin}/?aod=1&th=1"
                             page.goto(offer_url, wait_until="load", timeout=60000)
                             
-                            page.wait_for_timeout(10000)
+                            page.wait_for_timeout(15000)
                             offer_content = page.content()
                             offer_soup = BeautifulSoup(offer_content, "html.parser")
                             price = findPrice(offer_soup)                        
                             priceUsed = findUsedPrice(offer_soup)
+                    except PlaywrightTimeoutError:
+                        print(f"Timeout while trying to load page for {url}")
+                        continue
+                    except Exception as e:
+                        print(f"An unexpected error occurred processing {url}: {e}")
+                        continue
 
                 savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
@@ -235,10 +246,6 @@ def scrape_wishlist_page(items):
 
                 scrappedItems.append(scrappedItem)
 
-        except PlaywrightTimeoutError:
-            print(f"Timeout while trying to load page for {url}")
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
         finally:
             browser.close()    
     return scrappedItems
@@ -391,13 +398,13 @@ def printItemsTitles(items):
 def printItemsUrls(list_items):
     
     base_url = "https://www.amazon.es"
-    print(f"Num of items {len(list_items)}")
+    #print(f"Num of items {len(list_items)}")
     for item in list_items:
                     url = findURLtoITEM(item, base_url)
 
                     match = re.search(r'/dp/([A-Z0-9]{10})', url)
                     asin = match.group(1)
-                    print(f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used")
+      #              print(f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used")
 
 def scrape_wishlists(urls):
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -407,14 +414,16 @@ def scrape_wishlists(urls):
         page = browser.new_page()
 
         for url in urls:
-            #print(f"Scraping {url}")
+    #        print(f"Scraping {url}")
             try:
                 page.goto(url, wait_until="load", timeout=60000)
                 html_text = page.content()
                 soup = BeautifulSoup(html_text, "html.parser")
                 
                 list_items = soup.find_all(attrs={"data-itemid": True})
-                #printItemsUrls(list_items)
+                if not list_items:
+                    list_items = soup.find_all(lambda tag: tag.name in ["div", "li"] and tag.has_attr("id") and tag["id"].startswith("item_") and "itemName_" not in tag["id"])
+     #           printItemsUrls(list_items)
                 
                 items.extend(list_items)
                 

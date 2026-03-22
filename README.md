@@ -2,6 +2,57 @@
 
 PricePulse is a full-stack Amazon wishlist tracker that monitors price drops (both New and Used) and notifies you via Telegram. It features a modern Android application, a FastAPI backend, and a stealthy Playwright-based scraper.
 
+## 🗺️ System Overview
+
+### Use Case Diagram
+Describes the primary interactions between the User, PricePulse, and External Services.
+
+```mermaid
+useCaseDiagram
+    actor User
+    actor Telegram
+    actor Amazon
+
+    User --> (Add/Manage Wishlists)
+    User --> (View Price History Graphs)
+    User --> (Sort & Filter Items)
+    User --> (Share Deals / Buy Now)
+    User --> (Manual Refresh)
+
+    (Background Scraping) --> Amazon : Fetch Prices
+    (Background Scraping) --> (Database) : Save History
+    (Background Scraping) --> Telegram : Send Price Drop Alert
+    Telegram --> User : Notification
+```
+
+### High-Level Architecture (C4 Container Diagram)
+Shows the internal technical containers and how they communicate.
+
+```mermaid
+graph TD
+    subgraph "Mobile Client"
+        App[Android App: PricePulse<br/>Kotlin/Compose]
+    end
+
+    subgraph "Server Environment"
+        API[Backend API<br/>FastAPI/Python]
+        Scraper[Scraper Service<br/>Playwright/Python]
+        DB[(Database<br/>SQLAlchemy/PostgreSQL)]
+    end
+
+    subgraph "External Services"
+        TG[Telegram Bot API]
+        Amz[Amazon Website]
+    end
+
+    App -- "REST API (JSON)" --> API
+    API -- "ORM" --> DB
+    Scraper -- "ORM" --> DB
+    Scraper -- "HTTPS" --> TG
+    Scraper -- "Stealth Scraping" --> Amz
+    TG -. "Push Notification" .-> UserApp[User Telegram App]
+```
+
 ## 🚀 Features
 
 ### 📱 Android App (PricePulse)

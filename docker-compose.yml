@@ -1,10 +1,38 @@
 services:
-  amazon-price-notifier:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: wishlist
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+
+  scraper:
     build: .
     volumes:
       - ./amazonPriceUpdateNotifier.properties:/app/amazonPriceUpdateNotifier.properties
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://user:password@db/wishlist
+    depends_on:
+      - db
     restart: unless-stopped
-    labels:
-      - "com.centurylinklabs.watchtower.enable=false"
+    command: python amazonPriceUpdateNotification.py
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db/wishlist
+    depends_on:
+      - db
+    restart: unless-stopped
+    command: python api.py
+
+volumes:
+  postgres_data:

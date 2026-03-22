@@ -7,11 +7,18 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from models import SessionLocal, init_db, Item, PriceHistory
 
 
 from datetime import datetime
 
 import sched, time
+
+# Initialize database
+try:
+    init_db()
+except Exception as e:
+    print(f"Error initializing database: {e}")
 
 wish_list = {}
 notified_items = {}
@@ -146,12 +153,28 @@ def itemsToMap(items):
 
 
 def cleanupRemovedItems(items):
-    for wishItem in wish_list.copy().values():
-        itemId = wishItem["id"]
+    session = SessionLocal()
+    try:
+        for wishItem in wish_list.copy().values():
+            itemId = wishItem["id"]
 
-        if not findItem(items, itemId):
-            print(f"Removing {wishItem}")
-            del wish_list[itemId]
+            if not findItem(items, itemId):
+                print(f"Removing {wishItem['title'][:50]} (ID: {itemId}) from database and memory.")
+                
+                # 1. Delete from DB (cascades to PriceHistory)
+                db_item = session.query(Item).filter(Item.id == itemId).first()
+                if db_item:
+                    session.delete(db_item)
+                
+                # 2. Delete from in-memory list
+                del wish_list[itemId]
+        
+        session.commit()
+    except Exception as e:
+        print(f"Error cleaning up removed items from database: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
 
 def findItem(items, wishItemId):
@@ -196,7 +219,6 @@ def buildBody(items):
 
     return body.strip()
     
-import json
 import os
 
 def findImageURL(item):
@@ -214,14 +236,6 @@ def findImageURL(item):
     except Exception as e:
         print(f"Could not find image for item {itemId}: {e}")
     return None
-
-def save_wishlist_to_json():
-    try:
-        with open('wishlist_data.json', 'w', encoding='utf-8') as f:
-            json.dump(list(wish_list.values()), f, ensure_ascii=False, indent=4)
-        #print("Wishlist saved to wishlist_data.json")
-    except Exception as e:
-        print(f"Error saving wishlist to JSON: {e}")
 
 def scrape_wishlist_page(items):
     notification_list = []
@@ -281,35 +295,65 @@ def scrape_wishlist_page(items):
 
 def updateWishList(newItems):
     updatedItems = []
-    for newItem in newItems:
-        itemId = newItem["id"]
-        item = wish_list.get(itemId)
+    session = SessionLocal()
+    try:
+        for newItem in newItems:
+            itemId = newItem["id"]
+            
+            # 1. Update/Create Item in DB
+            db_item = session.query(Item).filter(Item.id == itemId).first()
+            if not db_item:
+                db_item = Item(id=itemId)
+                session.add(db_item)
+            
+            db_item.title = newItem["title"]
+            db_item.url = newItem["url"]
+            db_item.image_url = newItem["imageURL"]
+            
+            if newItem["priceUsed"] is not None:
+                if db_item.best_used_price is None or newItem["priceUsed"] < db_item.best_used_price:
+                    db_item.best_used_price = newItem["priceUsed"]
 
-        if item is None:
-            wish_list[itemId] = newItem
-            updatedItems.append(newItem)
-        else:
-            # Always update these fields
-            item["title"] = newItem["title"]
-            item["imageURL"] = newItem["imageURL"]
-            item["url"] = newItem["url"]
+            # 2. Add Price History Entry
+            history_entry = PriceHistory(
+                item_id=itemId,
+                price=newItem["price"],
+                price_used=newItem["priceUsed"],
+                savings=newItem["savings"],
+                timestamp=datetime.now()
+            )
+            session.add(history_entry)
 
-            if item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
-                item["history"]["price"].insert(0, item["price"])
-                item["history"]["price"] = item["history"]["price"][:2]
-                item["history"]["priceUsed"].insert(0, item["priceUsed"])
-                item["history"]["priceUsed"] = item["history"]["priceUsed"][:2]
+            # 3. Handle memory-based wish_list (keeping it for existing notification logic)
+            item = wish_list.get(itemId)
+            if item is None:
+                wish_list[itemId] = newItem
+                updatedItems.append(newItem)
+            else:
+                # Always update these fields in memory
+                item["title"] = newItem["title"]
+                item["imageURL"] = newItem["imageURL"]
+                item["url"] = newItem["url"]
 
-                item["price"] = newItem["price"]
-                item["priceUsed"] = newItem["priceUsed"]
-                item["savings"] = newItem["savings"]
+                if item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
+                    item["history"]["price"].insert(0, item["price"])
+                    item["history"]["price"] = item["history"]["price"][:2]
+                    item["history"]["priceUsed"].insert(0, item["priceUsed"])
+                    item["history"]["priceUsed"] = item["history"]["priceUsed"][:2]
 
-                # Update bestUsedPrice if the new used price is better
-                if newItem["priceUsed"] is not None:
-                    if item.get("bestUsedPrice") is None or newItem["priceUsed"] < item["bestUsedPrice"]:
-                        item["bestUsedPrice"] = newItem["priceUsed"]
+                    item["price"] = newItem["price"]
+                    item["priceUsed"] = newItem["priceUsed"]
+                    item["savings"] = newItem["savings"]
+                    item["bestUsedPrice"] = db_item.best_used_price
 
-                updatedItems.append(item)
+                    updatedItems.append(item)
+        
+        session.commit()
+    except Exception as e:
+        print(f"Error updating database: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
     return updatedItems
 
@@ -507,8 +551,6 @@ if __name__ == "__main__":
         if len(non_duplicate_items) > 0:
             notifyUpdates(non_duplicate_items)
             store_notified_item(non_duplicate_items)
-
-        save_wishlist_to_json()
 
         #print("Check complete.")
         # Schedule the next run and increment the iteration_count

@@ -1,7 +1,8 @@
-from fastapi import FastAPI
-import json
+from fastapi import FastAPI, HTTPException
 import os
 from fastapi.middleware.cors import CORSMiddleware
+from models import SessionLocal, Item, PriceHistory
+from sqlalchemy.orm import joinedload
 
 app = FastAPI()
 
@@ -13,17 +14,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-WISHLIST_FILE = "wishlist_data.json"
-
 @app.get("/items")
 def get_items():
-    if not os.path.exists(WISHLIST_FILE):
-        return []
+    session = SessionLocal()
     try:
-        with open(WISHLIST_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        return {"error": str(e)}
+        items = session.query(Item).all()
+        result = []
+        for item in items:
+            latest_price = session.query(PriceHistory)\
+                .filter(PriceHistory.item_id == item.id)\
+                .order_by(PriceHistory.timestamp.desc())\
+                .first()
+            
+            result.append({
+                "id": item.id,
+                "title": item.title,
+                "url": item.url,
+                "imageURL": item.image_url,
+                "price": latest_price.price if latest_price else None,
+                "priceUsed": latest_price.price_used if latest_price else None,
+                "savings": latest_price.savings if latest_price else 0,
+                "bestUsedPrice": item.best_used_price
+            })
+        return result
+    finally:
+        session.close()
+
+@app.get("/items/{item_id}/history")
+def get_item_history(item_id: str):
+    session = SessionLocal()
+    try:
+        history = session.query(PriceHistory)\
+            .filter(PriceHistory.item_id == item_id)\
+            .order_by(PriceHistory.timestamp.asc())\
+            .all()
+        return history
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     import uvicorn

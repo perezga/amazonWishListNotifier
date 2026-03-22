@@ -6,6 +6,14 @@ import os
 
 Base = declarative_base()
 
+class Wishlist(Base):
+    __tablename__ = "wishlists"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, unique=True)
+    url = Column(String)
+    
+    items = relationship("Item", back_populates="wishlist")
+
 class Item(Base):
     __tablename__ = "items"
     id = Column(String, primary_key=True)
@@ -13,7 +21,9 @@ class Item(Base):
     url = Column(String)
     image_url = Column(String)
     best_used_price = Column(Float)
+    wishlist_id = Column(Integer, ForeignKey("wishlists.id"))
     
+    wishlist = relationship("Wishlist", back_populates="items")
     history = relationship("PriceHistory", back_populates="item", cascade="all, delete-orphan")
 
 class PriceHistory(Base):
@@ -26,6 +36,16 @@ class PriceHistory(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     
     item = relationship("Item", back_populates="history")
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    item_id = Column(String, ForeignKey("items.id"))
+    title = Column(String)
+    message = Column(String)
+    price = Column(Float)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    is_read = Column(Integer, default=0) # 0 for unread, 1 for read
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db/wishlist")
 

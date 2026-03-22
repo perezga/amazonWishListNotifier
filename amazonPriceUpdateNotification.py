@@ -1,3 +1,5 @@
+import random
+import time
 from jproperties import Properties
 import locale
 import re
@@ -6,7 +8,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from models import SessionLocal, init_db, Item, PriceHistory
+from models import SessionLocal, init_db, Item, PriceHistory, Notification, Wishlist
 
 
 from datetime import datetime
@@ -31,7 +33,8 @@ with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
     configs.load(config_file)
 
 #Add as many comma separated wish lists as you desire
-wishlistURLs = configs.get("wishlist.urls").data.split(",")
+# wishlistURLs = configs.get("wishlist.urls").data.split(",") if configs.get("wishlist.urls") else []
+wishlistURLs = []
 
 #telegram
 TOKEN = os.environ.get("TELEGRAM_TOKEN", configs.get("telegram.token").data if configs.get("telegram.token") else None)
@@ -229,56 +232,69 @@ def findImageURL(item):
         print(f"Could not find image for item {itemId}: {e}")
     return None
 
-def scrape_wishlist_page(items):
+def scrape_wishlist_page(wishlist_mapping):
     notification_list = []
     scrappedItems = []
     base_url = "https://www.amazon.es"
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
         try:
-            for item in items:
-                #price = findPrice(item)
-                url = findURLtoITEM(item, base_url)
-                priceUsed = None
-                price = None
+            for url, wishlist_data in wishlist_mapping.items():
+                items = wishlist_data["items"]
+                for item in items:
+                    # Random user agent and delay for each item
+                    context = browser.new_context(user_agent=random.choice(USER_AGENTS))
+                    page = context.new_page()
+                    
+                    #price = findPrice(item)
+                    item_url = findURLtoITEM(item, base_url)
+                    priceUsed = None
+                    price = None
 
-                if url:
-                    try:
-                        match = re.search(r'/dp/([A-Z0-9]{10})', url)
-                        if match:
-                            asin = match.group(1)
-                            offer_url = f"{base_url}/dp/{asin}/?aod=1&th=1"
-                            page.goto(offer_url, wait_until="load", timeout=60000)
+                    if item_url:
+                        try:
+                            # Random sleep between 1-3 seconds before each item
+                            time.sleep(random.uniform(1.0, 3.0))
                             
-                            page.wait_for_timeout(15000)
-                            offer_content = page.content()
-                            offer_soup = BeautifulSoup(offer_content, "html.parser")
-                            price = findPrice(offer_soup)                        
-                            priceUsed = findUsedPrice(offer_soup)
-                    except PlaywrightTimeoutError:
-                        print(f"Timeout while trying to load page for {url}")
-                        continue
-                    except Exception as e:
-                        print(f"An unexpected error occurred processing {url}: {e}")
-                        continue
+                            match = re.search(r'/dp/([A-Z0-9]{10})', item_url)
+                            if match:
+                                asin = match.group(1)
+                                offer_url = f"{base_url}/dp/{asin}/?aod=1&th=1"
+                                page.goto(offer_url, wait_until="load", timeout=60000)
+                                
+                                # Randomise the wait time slightly
+                                page.wait_for_timeout(random.randint(10000, 20000))
+                                
+                                offer_content = page.content()
+                                offer_soup = BeautifulSoup(offer_content, "html.parser")
+                                price = findPrice(offer_soup)                        
+                                priceUsed = findUsedPrice(offer_soup)
+                        except PlaywrightTimeoutError:
+                            print(f"Timeout while trying to load page for {item_url}")
+                        except Exception as e:
+                            print(f"An unexpected error occurred processing {item_url}: {e}")
+                        finally:
+                            page.close()
+                            context.close()
 
-                savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
+                    savings = float(f"{100 - (priceUsed/price)*100:.2f}") if priceUsed and price and price > 0 else float(0)
 
-                scrappedItem = {
-                    "id": findId(item),
-                    "title": findTitle(item),
-                    "price": price,
-                    "priceUsed": priceUsed,
-                    "history": {"price": [], "priceUsed": []},
-                    "savings": savings,
-                    "bestUsedPrice": priceUsed,
-                    "url": url,
-                    "imageURL": findImageURL(item)
-                }
+                    scrappedItem = {
+                        "id": findId(item),
+                        "title": findTitle(item),
+                        "price": price,
+                        "priceUsed": priceUsed,
+                        "history": {"price": [], "priceUsed": []},
+                        "savings": savings,
+                        "bestUsedPrice": priceUsed,
+                        "url": item_url,
+                        "imageURL": findImageURL(item),
+                        "wishlist_url": url,
+                        "wishlist_name": wishlist_data["name"]
+                    }
 
-                scrappedItems.append(scrappedItem)
+                    scrappedItems.append(scrappedItem)
 
         finally:
             browser.close()    
@@ -333,6 +349,15 @@ def updateWishList(newItems):
         for newItem in newItems:
             itemId = newItem["id"]
             
+            # Update/Create Wishlist
+            wishlist = session.query(Wishlist).filter(Wishlist.url == newItem["wishlist_url"]).first()
+            if not wishlist:
+                wishlist = Wishlist(url=newItem["wishlist_url"], name=newItem["wishlist_name"])
+                session.add(wishlist)
+                session.flush() # Get ID
+            elif wishlist.name != newItem["wishlist_name"]:
+                wishlist.name = newItem["wishlist_name"]
+
             # 1. Update/Create Item in DB
             db_item = session.query(Item).filter(Item.id == itemId).first()
             if not db_item:
@@ -342,20 +367,27 @@ def updateWishList(newItems):
             db_item.title = newItem["title"]
             db_item.url = newItem["url"]
             db_item.image_url = newItem["imageURL"]
+            db_item.wishlist_id = wishlist.id
             
             if newItem["priceUsed"] is not None:
                 if db_item.best_used_price is None or newItem["priceUsed"] < db_item.best_used_price:
                     db_item.best_used_price = newItem["priceUsed"]
 
-            # 2. Add Price History Entry
-            history_entry = PriceHistory(
-                item_id=itemId,
-                price=newItem["price"],
-                price_used=newItem["priceUsed"],
-                savings=newItem["savings"],
-                timestamp=datetime.now()
-            )
-            session.add(history_entry)
+            # 2. Add Price History Entry ONLY if price changed
+            latest_history = session.query(PriceHistory)\
+                .filter(PriceHistory.item_id == itemId)\
+                .order_by(PriceHistory.timestamp.desc())\
+                .first()
+            
+            if not latest_history or latest_history.price != newItem["price"] or latest_history.price_used != newItem["priceUsed"]:
+                history_entry = PriceHistory(
+                    item_id=itemId,
+                    price=newItem["price"],
+                    price_used=newItem["priceUsed"],
+                    savings=newItem["savings"],
+                    timestamp=datetime.now()
+                )
+                session.add(history_entry)
             
             # 3. Handle memory-based wish_list (keeping it for existing notification logic)
             item = wish_list.get(itemId)
@@ -367,6 +399,8 @@ def updateWishList(newItems):
                 item["title"] = newItem["title"]
                 item["imageURL"] = newItem["imageURL"]
                 item["url"] = newItem["url"]
+                item["wishlist_url"] = newItem["wishlist_url"]
+                item["wishlist_name"] = newItem["wishlist_name"]
 
                 if item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
                     item["history"]["price"].insert(0, item["price"])
@@ -441,6 +475,25 @@ def notifyUpdates(items):
     if items:
         body = buildBody(items)
         sendTelegram(body)
+        saveNotifications(items)
+
+def saveNotifications(items):
+    session = SessionLocal()
+    try:
+        for item in items:
+            notification = Notification(
+                item_id=item["id"],
+                title=item["title"],
+                message=f"Price drop! Current price: {item['price']}, Used price: {item['priceUsed']}, Savings: {item['savings']}%",
+                price=item["priceUsed"] if item["priceUsed"] else item["price"]
+            )
+            session.add(notification)
+        session.commit()
+    except Exception as e:
+        print(f"Error saving notifications to DB: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
 def sendTelegram(body):
     if not TOKEN or not chat_id:
@@ -482,27 +535,62 @@ def printItemsUrls(list_items):
                     asin = match.group(1)
       #              print(f"{base_url}/gp/offer-listing/{asin}/ref=dp_olp_used?ie=UTF8&condition=used")
 
-def scrape_wishlists(urls):
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/118.0",
+]
+
+def scrape_wishlists(urls=None):
+    if urls is None:
+        urls = []
     dt_string = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    items = []
+    wishlist_mapping = {}
+    
+    # 1. Fetch URLs from Database
+    session = SessionLocal()
+    try:
+        db_urls = [w.url for w in session.query(Wishlist).all()]
+    except Exception as e:
+        print(f"Error fetching wishlists from DB: {e}")
+        db_urls = []
+    finally:
+        session.close()
+
+    all_urls = list(set(urls + db_urls))
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        # Use a random user agent for the browser context
+        context = browser.new_context(user_agent=random.choice(USER_AGENTS))
+        page = context.new_page()
 
-        for url in urls:
-    #        print(f"Scraping {url}")
+        for url in all_urls:
             try:
+                # Add a small random jitter delay between wishlist scrapes
+                time.sleep(random.uniform(2.0, 5.0))
+                
                 page.goto(url, wait_until="load", timeout=60000)
                 html_text = page.content()
                 soup = BeautifulSoup(html_text, "html.parser")
                 
+                # Try to find wishlist name
+                wishlist_name = soup.find("span", id="profile-list-name")
+                if wishlist_name:
+                    wishlist_name = wishlist_name.get_text(strip=True)
+                else:
+                    wishlist_name = url.split("/")[-1] # Fallback to part of URL
+
                 list_items = soup.find_all(attrs={"data-itemid": True})
                 if not list_items:
                     list_items = soup.find_all(lambda tag: tag.name in ["div", "li"] and tag.has_attr("id") and tag["id"].startswith("item_") and "itemName_" not in tag["id"])
-     #           printItemsUrls(list_items)
                 
-                items.extend(list_items)
-                
+                wishlist_mapping[url] = {
+                    "name": wishlist_name,
+                    "items": list_items
+                }
                 
             except PlaywrightTimeoutError:
                 print(f"Timeout while trying to load wishlist {url}")
@@ -512,7 +600,7 @@ def scrape_wishlists(urls):
                 continue
 
         browser.close()
-    return items
+    return wishlist_mapping
 
 
 if __name__ == "__main__":
@@ -521,17 +609,17 @@ if __name__ == "__main__":
     sendTelegram("Amazon Notification service RESTARTING")
 
     print("Scraping wishlist...")
-    items = scrape_wishlists(wishlistURLs)
+    wishlist_mapping = scrape_wishlists(wishlistURLs)
         
     # The main function now accepts an 'iteration_count'
-    def main(sc, items, iteration_count):
+    def main(sc, wishlist_mapping, iteration_count):
         
         # Every 10 iterations, re-scrape the main wishlist URLs to find new or removed items
         if iteration_count > 0 and iteration_count % 10 == 0:
             print("Refreshing full wishlist...")
-            items = scrape_wishlists(wishlistURLs)
+            wishlist_mapping = scrape_wishlists(wishlistURLs)
             
-        scrappedItems = scrape_wishlist_page(items)
+        scrappedItems = scrape_wishlist_page(wishlist_mapping)
 
         # First, clean up any items that are no longer on the wishlist
         cleanupRemovedItems(scrappedItems)
@@ -552,13 +640,12 @@ if __name__ == "__main__":
 
         #print("Check complete.")
         # Schedule the next run and increment the iteration_count
-        s.enter(20, 1, main, (sc, items, iteration_count + 1))
+        s.enter(20, 1, main, (sc, wishlist_mapping, iteration_count + 1))
 
     # Schedule the first run with iteration_count starting at 1
-    s.enter(1, 1, main, (s, items, 1))
+    s.enter(1, 1, main, (s, wishlist_mapping, 1))
     
     # Schedule the first ILM cleanup to run shortly after start
     s.enter(5, 1, run_ilm_cleanup, (s,))
 
     s.run()
-    # The final main(s) call is not needed as s.run() starts the scheduler loop.

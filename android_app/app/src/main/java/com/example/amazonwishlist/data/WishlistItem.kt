@@ -10,5 +10,7 @@ data class WishlistItem(
     @Json(name = "savings") val savings: Double,
     @Json(name = "url") val url: String,
     @Json(name = "imageURL") val imageURL: String?,
-    @Json(name = "bestUsedPrice") val bestUsedPrice: Double?
+    @Json(name = "bestUsedPrice") val bestUsedPrice: Double?,
+    @Json(name = "wishlistName") val wishlistName: String?,
+    @Json(name = "wishlistUrl") val wishlistUrl: String?
 )

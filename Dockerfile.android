@@ -1,0 +1,18 @@
+# Use a specialized Android build image
+FROM thyrlian/android-sdk:latest
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the Android project
+COPY ./android_app .
+
+# Accept licenses (Thyrlian's image has a script for this)
+RUN yes | sdkmanager --licenses || true
+
+# Make gradlew executable (might need to do it as root in the container)
+USER root
+RUN chmod +x gradlew
+
+# Run the build
+CMD ["./gradlew", "assembleDebug"]

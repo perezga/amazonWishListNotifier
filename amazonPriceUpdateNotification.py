@@ -40,6 +40,9 @@ chat_id = os.environ.get("TELEGRAM_CHAT_ID", configs.get("telegram.chatid").data
 #Minimum savings percentage between normal price and Used price.Used to notify only when that condition meets.
 minSavingsPercentage = float(configs.get("notification.savings.percentage").data)
 
+#Maximum historical data points to keep per item.
+historyLimit = int(configs.get("history.limit").data) if configs.get("history.limit") else 100
+
 used_condition_keywords = configs.get("used.condition.keywords").data.split(',')
 
 def findTitle(item):
@@ -282,8 +285,10 @@ def scrape_wishlist_page(items):
     return scrappedItems
 
 
-def enforce_ilm_policy(session, item_id, max_history=100):
+def enforce_ilm_policy(session, item_id, max_history=None):
     """Deletes oldest price history entries, keeping only the most recent 'max_history'."""
+    if max_history is None:
+        max_history = historyLimit
     try:
         # Get history entries ordered by timestamp DESC
         history_to_keep = session.query(PriceHistory.id)\
@@ -302,6 +307,24 @@ def enforce_ilm_policy(session, item_id, max_history=100):
                 .delete(synchronize_session=False)
     except Exception as e:
         print(f"Error enforcing ILM policy for item {item_id}: {e}")
+
+def run_ilm_cleanup(sc):
+    """Periodically cleans up old price history for all items."""
+    print("Running daily ILM cleanup...")
+    session = SessionLocal()
+    try:
+        items = session.query(Item).all()
+        for item in items:
+            enforce_ilm_policy(session, item.id)
+        session.commit()
+    except Exception as e:
+        print(f"Error during ILM cleanup: {e}")
+        session.rollback()
+    finally:
+        session.close()
+    
+    # Schedule the next run in 24 hours (86400 seconds)
+    sc.enter(86400, 1, run_ilm_cleanup, (sc,))
 
 def updateWishList(newItems):
     updatedItems = []
@@ -334,9 +357,6 @@ def updateWishList(newItems):
             )
             session.add(history_entry)
             
-            # Enforce ILM Policy: Keep only latest 100 data points
-            enforce_ilm_policy(session, itemId, 100)
-
             # 3. Handle memory-based wish_list (keeping it for existing notification logic)
             item = wish_list.get(itemId)
             if item is None:
@@ -536,5 +556,9 @@ if __name__ == "__main__":
 
     # Schedule the first run with iteration_count starting at 1
     s.enter(1, 1, main, (s, items, 1))
+    
+    # Schedule the first ILM cleanup to run shortly after start
+    s.enter(5, 1, run_ilm_cleanup, (s,))
+
     s.run()
     # The final main(s) call is not needed as s.run() starts the scheduler loop.

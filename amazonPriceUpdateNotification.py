@@ -196,6 +196,33 @@ def buildBody(items):
 
     return body.strip()
     
+import json
+import os
+
+def findImageURL(item):
+    try:
+        itemId = findId(item)
+        # Try to find by id first
+        img_element = item.find("img", id=f"itemImage_{itemId}")
+        if img_element and img_element.has_attr('src'):
+            return img_element["src"]
+        
+        # Fallback to any img in the item
+        img_element = item.find("img")
+        if img_element and img_element.has_attr('src'):
+            return img_element["src"]
+    except Exception as e:
+        print(f"Could not find image for item {itemId}: {e}")
+    return None
+
+def save_wishlist_to_json():
+    try:
+        with open('wishlist_data.json', 'w', encoding='utf-8') as f:
+            json.dump(list(wish_list.values()), f, ensure_ascii=False, indent=4)
+        #print("Wishlist saved to wishlist_data.json")
+    except Exception as e:
+        print(f"Error saving wishlist to JSON: {e}")
+
 def scrape_wishlist_page(items):
     notification_list = []
     scrappedItems = []
@@ -241,7 +268,8 @@ def scrape_wishlist_page(items):
                     "history": {"price": [], "priceUsed": []},
                     "savings": savings,
                     "bestUsedPrice": priceUsed,
-                    "url": url
+                    "url": url,
+                    "imageURL": findImageURL(item)
                 }
 
                 scrappedItems.append(scrappedItem)
@@ -260,22 +288,28 @@ def updateWishList(newItems):
         if item is None:
             wish_list[itemId] = newItem
             updatedItems.append(newItem)
-        elif item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
-            item["history"]["price"].insert(0, item["price"])
-            item["history"]["price"] = item["history"]["price"][:2]
-            item["history"]["priceUsed"].insert(0, item["priceUsed"])
-            item["history"]["priceUsed"] = item["history"]["priceUsed"][:2]
+        else:
+            # Always update these fields
+            item["title"] = newItem["title"]
+            item["imageURL"] = newItem["imageURL"]
+            item["url"] = newItem["url"]
 
-            item["price"] = newItem["price"]
-            item["priceUsed"] = newItem["priceUsed"]
-            item["savings"] = newItem["savings"]
+            if item["price"] != newItem["price"] or item["priceUsed"] != newItem["priceUsed"]:
+                item["history"]["price"].insert(0, item["price"])
+                item["history"]["price"] = item["history"]["price"][:2]
+                item["history"]["priceUsed"].insert(0, item["priceUsed"])
+                item["history"]["priceUsed"] = item["history"]["priceUsed"][:2]
 
-            # Update bestUsedPrice if the new used price is better
-            if newItem["priceUsed"] is not None:
-                if item.get("bestUsedPrice") is None or newItem["priceUsed"] < item["bestUsedPrice"]:
-                    item["bestUsedPrice"] = newItem["priceUsed"]
+                item["price"] = newItem["price"]
+                item["priceUsed"] = newItem["priceUsed"]
+                item["savings"] = newItem["savings"]
 
-            updatedItems.append(item)
+                # Update bestUsedPrice if the new used price is better
+                if newItem["priceUsed"] is not None:
+                    if item.get("bestUsedPrice") is None or newItem["priceUsed"] < item["bestUsedPrice"]:
+                        item["bestUsedPrice"] = newItem["priceUsed"]
+
+                updatedItems.append(item)
 
     return updatedItems
 
@@ -473,6 +507,8 @@ if __name__ == "__main__":
         if len(non_duplicate_items) > 0:
             notifyUpdates(non_duplicate_items)
             store_notified_item(non_duplicate_items)
+
+        save_wishlist_to_json()
 
         #print("Check complete.")
         # Schedule the next run and increment the iteration_count

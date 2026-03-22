@@ -2,3 +2,5 @@ jproperties
 requests
 beautifulsoup4
 playwright
+fastapi
+uvicorn

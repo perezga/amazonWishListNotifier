@@ -282,6 +282,27 @@ def scrape_wishlist_page(items):
     return scrappedItems
 
 
+def enforce_ilm_policy(session, item_id, max_history=100):
+    """Deletes oldest price history entries, keeping only the most recent 'max_history'."""
+    try:
+        # Get history entries ordered by timestamp DESC
+        history_to_keep = session.query(PriceHistory.id)\
+            .filter(PriceHistory.item_id == item_id)\
+            .order_by(PriceHistory.timestamp.desc())\
+            .limit(max_history)\
+            .all()
+        
+        keep_ids = [h.id for h in history_to_keep]
+        
+        # Delete entries not in the top N
+        if keep_ids:
+            session.query(PriceHistory)\
+                .filter(PriceHistory.item_id == item_id)\
+                .filter(PriceHistory.id.notin_(keep_ids))\
+                .delete(synchronize_session=False)
+    except Exception as e:
+        print(f"Error enforcing ILM policy for item {item_id}: {e}")
+
 def updateWishList(newItems):
     updatedItems = []
     session = SessionLocal()
@@ -312,6 +333,9 @@ def updateWishList(newItems):
                 timestamp=datetime.now()
             )
             session.add(history_entry)
+            
+            # Enforce ILM Policy: Keep only latest 100 data points
+            enforce_ilm_policy(session, itemId, 100)
 
             # 3. Handle memory-based wish_list (keeping it for existing notification logic)
             item = wish_list.get(itemId)

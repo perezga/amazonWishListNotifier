@@ -26,7 +26,7 @@ python api.py
 ```
 
 ### 2. Configure the Android App
-Open `android_app/app/src/main/java/com/example/amazonwishlist/data/WishlistApi.kt` and update the `BASE_URL` with your computer's local IP address (e.g., `http://192.168.1.100:8000/`).
+Open `android_app/app/src/main/java/com/example/amazonwishlist/data/WishlistApi.kt` and update the `BASE_URL` with your computer's local IP address (e.g., `http://192.168.1.100:8010/`).
 
 ### 3. Build and Run
 - Open the `android_app` directory in Android Studio.

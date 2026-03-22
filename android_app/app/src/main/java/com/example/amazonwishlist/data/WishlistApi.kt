@@ -6,7 +6,7 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 
 // Replace with your actual server IP address
-private const val BASE_URL = "http://192.168.1.100:8000/"
+private const val BASE_URL = "http://192.168.1.100:8010/"
 
 interface WishlistApiService {
     @GET("items")

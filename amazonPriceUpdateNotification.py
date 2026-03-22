@@ -1,5 +1,3 @@
-import smtplib
-from email.mime.text import MIMEText
 from jproperties import Properties
 import locale
 import re
@@ -35,19 +33,9 @@ with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
 #Add as many comma separated wish lists as you desire
 wishlistURLs = configs.get("wishlist.urls").data.split(",")
 
-notification_method = configs.get("notification_method").data
-
 #telegram
 TOKEN = os.environ.get("TELEGRAM_TOKEN", configs.get("telegram.token").data if configs.get("telegram.token") else None)
 chat_id = os.environ.get("TELEGRAM_CHAT_ID", configs.get("telegram.chatid").data if configs.get("telegram.chatid") else None)
-
-#Email
-host = configs.get("email.host").data
-port = configs.get("email.port").data
-username = configs.get("email.username").data
-password = configs.get("email.password").data
-emailFrom =  configs.get("email.from").data
-emailTo = configs.get("email.to").data
 
 #Minimum savings percentage between normal price and Used price.Used to notify only when that condition meets.
 minSavingsPercentage = float(configs.get("notification.savings.percentage").data)
@@ -408,13 +396,7 @@ def notifyUpdates(items):
     # if not empty
     if items:
         body = buildBody(items)
-        match notification_method:
-            case "TELEGRAM":
-                sendTelegram(body)
-            case "EMAIL":
-                sendEmail(body)
-            case _:
-                print("Set a notification method TELEGRAM|EMAIL in properties")
+        sendTelegram(body)
 
 def sendTelegram(body):
     if not TOKEN or not chat_id:
@@ -429,35 +411,6 @@ def sendTelegram(body):
     except requests.exceptions.RequestException as e:
         print(f"Failed to send Telegram notification: {e}")
        
-def sendEmail(body):
-    text_type = 'plain'  # or 'html'
-    
-    try:
-        msg = MIMEText(body, text_type, 'utf-8')
-        msg['Subject'] = get_subject(items)
-        msg['From'] = emailFrom
-        msg['To'] = emailTo
-
-        with smtplib.SMTP_SSL(host, port, timeout=10) as server:
-            server.login(username, password)
-            server.send_message(msg)
-            print("Email notification sent successfully.")
-    except smtplib.SMTPException as e:
-        print(f"Failed to send email notification (SMTP Error): {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred while sending email: {e}")
-
-def get_subject(items):
-    numItems = len(items)
-    item = items[0]
-    title = item['title'][0:10]
-    price = item['price']
-    priceLocale = locale.currency(price, grouping=True) if price else "N/A"
-    priceUsed = item['priceUsed']
-    priceUsedLocale = locale.currency(priceUsed, grouping=True) if priceUsed else "N/A"
-
-    return f"AMAZON{numItems}): {title}...({priceLocale}/{priceUsedLocale})"
-
 def printItems(items):
     for item in items:
         printItem(item, False)

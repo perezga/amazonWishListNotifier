@@ -1,6 +1,6 @@
 Script writen in Python to notify price changes of Products added in your Amazon wishlists.
 
-*An email is sent to your inbox when a Product has a savings percentage of X between the normal Price and the Used price.*
+*A Telegram notification is sent to your chat when a Product has a savings percentage of X between the normal Price and the Used price.*
 
 **Prerequisites**
 
@@ -18,21 +18,9 @@ Script writen in Python to notify price changes of Products added in your Amazon
         #comma separated list of wishlists (Create a wishlist in amazon and copy/paste the url)
         wishlist.urls=
         
-        #TELEGRAM|EMAIL
-        notification_method=TELEGRAM
-        
         #telegram configuration (can also be set via TELEGRAM_TOKEN and TELEGRAM_CHAT_ID env vars)
         telegram.token=
         telegram.chatid=
-
-        #email configuration
-        email.username=<your username>  
-        email.password=<your password>  
-        email.to=<your inbox>  
-        email.host=smtp.gmail.com  
-        email.port=465  
-        email.from=priceupdate@amazon.priceupdate.notification.com
-        email.subject="Amazon price change notification
 
         #Minimum savings percentage between normal price and Used price.Used to notify only when that condition meets.
         notification.savings.percentage=0.15

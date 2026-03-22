@@ -8,15 +8,20 @@ Script writen in Python to notify price changes of Products added in your Amazon
 
 **Instructions**
 
-    1 - Create a property file amazonPriceUpdateNotifier.properties in the same location as amazonPriceUpdateNotifier.py
+    1 - Configure the properties in `amazonPriceUpdateNotifier.properties` or set them as environment variables.
 
+        Environment variables supported:
+        - `TELEGRAM_TOKEN`: Your Telegram Bot API token.
+        - `TELEGRAM_CHAT_ID`: Your Telegram chat ID.
+
+        #amazonPriceUpdateNotifier.properties
         #comma separated list of wishlists (Create a wishlist in amazon and copy/paste the url)
         wishlist.urls=
         
         #TELEGRAM|EMAIL
         notification_method=TELEGRAM
         
-        #telegram configuration (follow instruction here https://medium.com/codex/using-python-to-send-telegram-messages-in-3-simple-steps-419a8b5e5e2)
+        #telegram configuration (can also be set via TELEGRAM_TOKEN and TELEGRAM_CHAT_ID env vars)
         telegram.token=
         telegram.chatid=
 

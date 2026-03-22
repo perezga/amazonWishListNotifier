@@ -1,5 +1,6 @@
 package com.example.amazonwishlist.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,7 +16,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WishlistScreen() {
+fun WishlistScreen(onItemClick: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<WishlistItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -46,7 +47,7 @@ fun WishlistScreen() {
             } else {
                 LazyColumn {
                     items(items) { item ->
-                        WishlistItemCard(item)
+                        WishlistItemCard(item, onClick = { onItemClick(item.id) })
                     }
                 }
             }
@@ -55,11 +56,12 @@ fun WishlistScreen() {
 }
 
 @Composable
-fun WishlistItemCard(item: WishlistItem) {
+fun WishlistItemCard(item: WishlistItem, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(8.dp)
+            .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(modifier = Modifier.padding(16.dp)) {

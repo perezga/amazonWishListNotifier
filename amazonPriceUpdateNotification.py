@@ -3,6 +3,7 @@ from email.mime.text import MIMEText
 from jproperties import Properties
 import locale
 import re
+import os
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,8 +38,8 @@ wishlistURLs = configs.get("wishlist.urls").data.split(",")
 notification_method = configs.get("notification_method").data
 
 #telegram
-TOKEN = configs.get("telegram.token").data
-chat_id = configs.get("telegram.chatid").data
+TOKEN = os.environ.get("TELEGRAM_TOKEN", configs.get("telegram.token").data if configs.get("telegram.token") else None)
+chat_id = os.environ.get("TELEGRAM_CHAT_ID", configs.get("telegram.chatid").data if configs.get("telegram.chatid") else None)
 
 #Email
 host = configs.get("email.host").data

@@ -8,18 +8,14 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from models import SessionLocal, init_db, Item, PriceHistory, Notification, Wishlist
+from models import SessionLocal, Item, PriceHistory, Notification, Wishlist, Setting
 
 
 from datetime import datetime
 
 import sched, time
 
-# Initialize database
-try:
-    init_db()
-except Exception as e:
-    print(f"Error initializing database: {e}")
+# Database initialization and migrations are now handled by Alembic on container startup
 
 wish_list = {}
 notified_items = {}
@@ -40,8 +36,22 @@ wishlistURLs = []
 TOKEN = os.environ.get("TELEGRAM_TOKEN", configs.get("telegram.token").data if configs.get("telegram.token") else None)
 chat_id = os.environ.get("TELEGRAM_CHAT_ID", configs.get("telegram.chatid").data if configs.get("telegram.chatid") else None)
 
-#Minimum savings percentage between normal price and Used price.Used to notify only when that condition meets.
-minSavingsPercentage = float(configs.get("notification.savings.percentage").data)
+def get_min_savings_percentage():
+    session = SessionLocal()
+    try:
+        setting = session.query(Setting).filter(Setting.key == "min_savings_percentage").first()
+        if setting:
+            return float(setting.value)
+    except Exception as e:
+        print(f"Error fetching min_savings_percentage from DB: {e}")
+    finally:
+        session.close()
+    
+    # Fallback to properties file or default
+    try:
+        return float(configs.get("notification.savings.percentage").data)
+    except:
+        return 0.10
 
 #Maximum historical data points to keep per item.
 historyLimit = int(configs.get("history.limit").data) if configs.get("history.limit") else 100
@@ -425,11 +435,11 @@ def updateWishList(newItems):
     return updatedItems
 
 
-def filterUpdates(items):
+def filterUpdates(items, min_savings):
     filteredItems = []
     for item in items:
         # We only notify if there's a valid used price that meets the savings criteria
-        if isSavingsGreaterThanStrategy(item["price"], item["priceUsed"], minSavingsPercentage):
+        if isSavingsGreaterThanStrategy(item["price"], item["priceUsed"], min_savings):
             filteredItems.append(item)
             printItem(item, True)
         else:
@@ -627,8 +637,11 @@ if __name__ == "__main__":
         # Then, update the price history for the remaining items
         updatedItems = updateWishList(scrappedItems)
 
+        # Dynamic Fetch of min_savings
+        current_min_savings = get_min_savings_percentage()
+
         # Filter for items with significant price drops
-        filteredItems = filterUpdates(updatedItems)
+        filteredItems = filterUpdates(updatedItems, current_min_savings)
         #print(f"Number of items to notify: {len(filteredItems)}")
 
         non_duplicate_items = filter_duplicate_notifications(filteredItems)

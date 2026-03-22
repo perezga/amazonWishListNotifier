@@ -6,6 +6,11 @@ import os
 
 Base = declarative_base()
 
+class Setting(Base):
+    __tablename__ = "settings"
+    key = Column(String, primary_key=True)
+    value = Column(String)
+
 class Wishlist(Base):
     __tablename__ = "wishlists"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -52,5 +57,4 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db/wishlist
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
+# Migration and initialization is now handled by Alembic

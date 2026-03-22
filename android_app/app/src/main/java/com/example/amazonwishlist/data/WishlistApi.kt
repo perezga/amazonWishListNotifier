@@ -37,6 +37,12 @@ interface WishlistApiService {
 
     @DELETE("wishlists/{id}")
     suspend fun deleteWishlist(@Path("id") id: Int): Map<String, String>
+
+    @GET("settings")
+    suspend fun getSettings(): Map<String, String>
+
+    @POST("settings")
+    suspend fun updateSettings(@Body settings: Map<String, String>): Map<String, String>
 }
 
 private val moshi = Moshi.Builder()

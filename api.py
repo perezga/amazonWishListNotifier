@@ -1,12 +1,62 @@
 from fastapi import FastAPI, HTTPException
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from models import SessionLocal, Item, PriceHistory, Notification, Wishlist
+from models import SessionLocal, Item, PriceHistory, Notification, Wishlist, Setting
 from sqlalchemy.orm import joinedload
 from pydantic import BaseModel
 
+app = FastAPI()
+
+# Enable CORS for the Android app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/settings")
+def get_settings():
+    session = SessionLocal()
+    try:
+        settings = session.query(Setting).all()
+        return {s.key: s.value for s in settings}
+    finally:
+        session.close()
+
+@app.post("/settings")
+def update_settings(settings_data: dict):
+    session = SessionLocal()
+    try:
+        for key, value in settings_data.items():
+            setting = session.query(Setting).filter(Setting.key == key).first()
+            if not setting:
+                setting = Setting(key=key, value=str(value))
+                session.add(setting)
+            else:
+                setting.value = str(value)
+        session.commit()
+        return {"status": "success"}
+    finally:
+        session.close()
+
+def init_default_settings():
+    session = SessionLocal()
+    try:
+        if not session.query(Setting).filter(Setting.key == "min_savings_percentage").first():
+            default_savings = os.getenv("DEFAULT_MIN_SAVINGS", "0.10")
+            session.add(Setting(key="min_savings_percentage", value=default_savings))
+            session.commit()
+            print("Initialized default min_savings_percentage")
+    except Exception as e:
+        print(f"Error initializing default settings: {e}")
+    finally:
+        session.close()
+
+init_default_settings()
+
 class WishlistCreate(BaseModel):
-    url: String = "" # Simplified for Pydantic
+    url: str = "" 
 
 @app.get("/wishlists")
 def get_wishlists():
@@ -28,8 +78,6 @@ def add_wishlist(wishlist_data: dict):
         if existing:
             return existing
         
-        # We don't know the name yet, scraper will update it. 
-        # Use a placeholder or extract from URL
         name = url.split("/")[-1]
         new_wishlist = Wishlist(url=url, name=name)
         session.add(new_wishlist)
@@ -47,24 +95,12 @@ def delete_wishlist(wishlist_id: int):
         if not wishlist:
             raise HTTPException(status_code=404, detail="Wishlist not found")
         
-        # Items and PriceHistory will stay, or we can delete them. 
-        # Let's delete items associated with this wishlist.
         session.query(Item).filter(Item.wishlist_id == wishlist_id).delete()
         session.delete(wishlist)
         session.commit()
         return {"status": "success"}
     finally:
         session.close()
-
-app = FastAPI()
-
-# Enable CORS for the Android app
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 @app.get("/items")
 def get_items():

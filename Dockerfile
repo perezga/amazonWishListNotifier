@@ -30,5 +30,9 @@ RUN playwright install --with-deps
 # Copy the rest of the application's code
 COPY . .
 
+# Set entrypoint
+RUN chmod +x entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh"]
+
 # Command to run the application
 CMD ["python", "amazonPriceUpdateNotification.py"]

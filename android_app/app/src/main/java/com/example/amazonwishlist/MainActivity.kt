@@ -103,6 +103,14 @@ fun WishlistApp() {
                     navController.navigate("detail/$itemId")
                 },
                 onSettingsClick = {
+                    navController.navigate("settings")
+                }
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onManageWishlistsClick = {
                     navController.navigate("management")
                 }
             )

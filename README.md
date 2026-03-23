@@ -18,6 +18,7 @@ useCaseDiagram
     User --> (Sort & Filter Items)
     User --> (Share Deals / Buy Now)
     User --> (Manual Refresh)
+    User --> (Configure App Settings)
 
     (Background Scraping) --> Amazon : Fetch Prices
     (Background Scraping) --> (Database) : Save History
@@ -31,13 +32,14 @@ Shows the internal technical containers and how they communicate.
 ```mermaid
 graph TD
     subgraph "Mobile Client"
-        App[Android App: PricePulse<br/>Kotlin/Compose]
+        App[Android App: PricePulse<br/>Kotlin/Compose/Retrofit]
     end
 
     subgraph "Server Environment"
-        API[Backend API<br/>FastAPI/Python]
+        API[Backend API<br/>FastAPI/Uvicorn]
         Scraper[Scraper Service<br/>Playwright/Python]
-        DB[(Database<br/>SQLAlchemy/PostgreSQL)]
+        DB[(Database<br/>PostgreSQL 16)]
+        Migrations[Alembic Migrations]
     end
 
     subgraph "External Services"
@@ -46,77 +48,79 @@ graph TD
     end
 
     App -- "REST API (JSON)" --> API
-    API -- "ORM" --> DB
-    Scraper -- "ORM" --> DB
+    API -- "SQLAlchemy ORM" --> DB
+    Scraper -- "SQLAlchemy ORM" --> DB
     Scraper -- "HTTPS" --> TG
     Scraper -- "Stealth Scraping" --> Amz
     TG -. "Push Notification" .-> UserApp[User Telegram App]
+    Migrations -- "DDL" --> DB
 ```
 
 ## 🚀 Features
 
 ### 📱 Android App (PricePulse)
-- **Visual Dashboards:** Group items by wishlist with collapsible sections.
-- **Price History:** View interactive charts of how prices have changed over time.
-- **Dynamic Management:** Add, delete, and manage wishlist URLs directly from the app.
-- **Stealth Integration:** Click on any item image or wishlist header to jump directly to the Amazon page.
-- **Modern UI:** Material 3 design, Dynamic Color support (Android 12+), and native Dark Mode.
-- **Smart Actions:** Share deals with friends or "Buy Now" with one tap.
+- **Visual Dashboards:** Group items by wishlist with collapsible sections and intuitive navigation.
+- **In-App Notifications:** Real-time synchronization of price drop alerts.
+- **Price History:** Interactive charts visualize price trends over time (New vs. Used).
+- **Wishlist Management:** Add, delete, and manage multiple Amazon wishlist URLs directly from the UI.
+- **Global Settings:** Configure notification thresholds (e.g., minimum savings percentage) from the app.
+- **Modern UI:** Built with Jetpack Compose, Material 3, and support for Dynamic Color (Android 12+).
+- **Deep Linking:** Tap images or headers to jump directly to the Amazon product page.
 
 ### 🕵️ Stealth Scraper
-- **Smart Tracking:** Records price history only when a change occurs to save space.
-- **Anti-Bot Measures:** Uses randomized User-Agents and human-like jitter delays between requests.
-- **Used Price Detection:** Specifically designed to find the best "Used" (De 2ª mano) deals, often providing massive savings.
+- **Playwright-Powered:** Uses browser automation with stealth plugins to avoid detection.
+- **Smart Tracking:** Intelligent history logging only records changes, optimizing database storage.
+- **Anti-Bot Measures:** Randomized User-Agents and human-like jitter delays.
+- **Used Price Detection:** Specialized in finding "Used - Like New" (De 2ª mano) deals for maximum savings.
 
-### ⚙️ Backend API
-- **FastAPI Powered:** High-performance API for item management and history retrieval.
-- **Automated Cleanup:** ILM policy automatically prunes old history data points to keep the database efficient.
+### ⚙️ Backend API & Data
+- **FastAPI Core:** High-performance asynchronous API handles all mobile client requests.
+- **Alembic Migrations:** Robust database schema management and versioning.
+- **Automated Cleanup (ILM):** Integrated Information Lifecycle Management prunes old history data (default: 100 points per item).
+- **Dockerized Stack:** Fully containerized for easy deployment with Postgres 16.
 
 ---
 
 ## 🛠️ Setup Instructions
 
-### 1. Backend & Scraper Configuration
-Configure your settings in `amazonPriceUpdateNotifier.properties` or via Environment Variables:
+### 1. Configuration
+Settings can be managed via `amazonPriceUpdateNotifier.properties` or Environment Variables:
 
 | Property | Env Var | Description |
 |----------|---------|-------------|
 | `telegram.token` | `TELEGRAM_TOKEN` | Your Telegram Bot API token. |
 | `telegram.chatid` | `TELEGRAM_CHAT_ID` | Your Telegram chat ID. |
-| `notification.savings.percentage` | - | Minimum % drop to trigger a notification (e.g., `0.10`). |
-| `history.limit` | - | Max data points to keep per item (default `100`). |
+| `notification.savings.percentage` | `MIN_SAVINGS` | % drop to trigger a notification (e.g., `0.10`). |
+| `history.limit` | `HISTORY_LIMIT` | Max data points per item (default `100`). |
+| `used.condition.keywords` | - | Keywords to identify used items (e.g., `Used,Usado`). |
 
 ### 2. Running the System
 
 #### Using Docker (Recommended)
-1. Build and run the entire stack (DB, API, Scraper):
+1. Launch the stack (Database, API, Scraper, Migrations):
    ```bash
    docker-compose up --build -d
    ```
-2. View logs: `docker-compose logs -f`
+2. The system automatically runs Alembic migrations on startup via `entrypoint.sh`.
 
 #### Manual Execution
 1. Install dependencies: `pip install -r requirements.txt`
-2. Initialize Database: `python -c 'from models import init_db; init_db()'`
+2. Run migrations: `alembic upgrade head`
 3. Start Scraper: `python amazonPriceUpdateNotification.py`
 4. Start API: `python api.py`
 
 ### 3. Android App Setup
-1. Open the `android_app` folder in Android Studio.
-2. Update `WishlistApi.kt` with your server's IP address:
-   ```kotlin
-   private const val BASE_URL = "http://YOUR_SERVER_IP:8010/"
-   ```
-3. Build and install the APK on your device.
-4. Open **PricePulse**, tap the **Settings** icon, and add your first Amazon Wishlist URL!
+1. Open the `android_app` project in Android Studio.
+2. Update `BASE_URL` in `WishlistApi.kt` to point to your server's IP.
+3. Build and install. Use the **Settings** screen to configure your server preferences!
 
 ---
 
 ## 📋 Requirements
-- **Python 3.9+**
-- **PostgreSQL** (for production) or SQLite.
-- **Playwright** (run `playwright install chromium` after installing requirements).
-- **Android SDK 24+** (Android 7.0+).
+- **Python 3.12+**
+- **PostgreSQL 16**
+- **Playwright** (run `playwright install --with-deps` if running manually)
+- **Android SDK 24+** (Android 7.0+)
 
 ## 📄 License
-This project is for educational purposes. Please respect Amazon's Terms of Service regarding scraping.
+This project is for educational purposes. Please respect Amazon's Terms of Service regarding automated access.

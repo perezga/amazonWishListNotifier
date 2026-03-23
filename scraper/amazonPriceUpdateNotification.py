@@ -8,7 +8,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from models import SessionLocal, Item, PriceHistory, Notification, Wishlist, Setting
+from api.models import SessionLocal, Item, PriceHistory, Notification, Wishlist, Setting
 
 
 from datetime import datetime
@@ -25,7 +25,8 @@ except locale.Error as e:
     print(f"Could not set locale: {e}. Prices will be displayed without currency formatting.")
 
 configs: Properties = Properties()
-with open('amazonPriceUpdateNotifier.properties', 'rb') as config_file:
+properties_path = os.path.join(os.path.dirname(__file__), 'amazonPriceUpdateNotifier.properties')
+with open(properties_path, 'rb') as config_file:
     configs.load(config_file)
 
 #Add as many comma separated wish lists as you desire

@@ -5,7 +5,7 @@ FROM thyrlian/android-sdk:latest
 WORKDIR /app
 
 # Copy the Android project
-COPY ./android_app .
+COPY ./android .
 
 # Accept licenses (Thyrlian's image has a script for this)
 RUN yes | sdkmanager --licenses || true

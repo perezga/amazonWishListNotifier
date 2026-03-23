@@ -2,7 +2,7 @@
 
 # Run migrations
 echo "Running database migrations..."
-alembic upgrade head
+alembic -c api/alembic.ini upgrade head
 
 # Run the command passed to the container
 exec "$@"

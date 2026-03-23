@@ -31,8 +31,8 @@ RUN playwright install --with-deps
 COPY . .
 
 # Set entrypoint
-RUN chmod +x entrypoint.sh
-ENTRYPOINT ["./entrypoint.sh"]
+RUN chmod +x docker/entrypoint.sh
+ENTRYPOINT ["docker/entrypoint.sh"]
 
 # Command to run the application
-CMD ["python", "amazonPriceUpdateNotification.py"]
+CMD ["python", "scraper/amazonPriceUpdateNotification.py"]

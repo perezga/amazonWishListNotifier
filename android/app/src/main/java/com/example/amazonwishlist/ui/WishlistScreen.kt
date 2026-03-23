@@ -1,6 +1,5 @@
 package com.example.amazonwishlist.ui
 
-import android.content.Intent
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,7 +17,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +43,7 @@ fun WishlistScreen(onItemClick: (String) -> Unit, onSettingsClick: () -> Unit) {
     var isRefreshing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var sortOrder by remember { mutableStateOf(SortOrder.ALPHABETICAL) }
+    var showSortMenu by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val haptic = LocalHapticFeedback.current
 
@@ -79,6 +78,11 @@ fun WishlistScreen(onItemClick: (String) -> Unit, onSettingsClick: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("PricePulse", fontWeight = FontWeight.Black) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                ),
                 actions = {
                     IconButton(onClick = { loadItems(refresh = true) }) {
                         if (isRefreshing) {
@@ -87,7 +91,6 @@ fun WishlistScreen(onItemClick: (String) -> Unit, onSettingsClick: () -> Unit) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
-                    var showSortMenu by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(Icons.Default.Sort, contentDescription = "Sort")
@@ -183,9 +186,9 @@ fun WishlistScreen(onItemClick: (String) -> Unit, onSettingsClick: () -> Unit) {
 @Composable
 fun LoadingShimmer() {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        repeat(5) {
+        repeat(8) {
             Card(
-                modifier = Modifier.fillMaxWidth().height(100.dp).padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().height(70.dp).padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             ) {}
         }
@@ -222,19 +225,20 @@ fun WishlistHeader(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -244,11 +248,12 @@ fun WishlistHeader(
                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                 )
             }
-            IconButton(onClick = onTitleClick) {
+            IconButton(onClick = onTitleClick, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.OpenInNew,
                     contentDescription = "Open in Amazon",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -262,110 +267,68 @@ fun WishlistItemCard(
     onImageClick: () -> Unit
 ) {
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("es", "ES")) }
-    val context = LocalContext.current
     
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         onClick = onCardClick,
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(8.dp)
     ) {
-        Column {
-            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = item.imageURL,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(90.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White)
-                        .clickable { onImageClick() }
-                        .padding(4.dp),
-                    contentScale = ContentScale.Fit
+        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = item.imageURL,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.White)
+                    .clickable { onImageClick() }
+                    .padding(2.dp),
+                contentScale = ContentScale.Fit
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = MaterialTheme.typography.titleSmall.lineHeight
                 )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = MaterialTheme.typography.titleSmall.lineHeight
+                        text = "New: ${item.price?.let { currencyFormatter.format(it) } ?: "N/A"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                     
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (item.priceUsed != null) {
-                            Text(
-                                text = currencyFormatter.format(item.priceUsed),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            if (item.price != null && item.price > item.priceUsed) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = currencyFormatter.format(item.price),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    textDecoration = TextDecoration.LineThrough,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            }
-                        } else if (item.price != null) {
-                            Text(
-                                text = currencyFormatter.format(item.price),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } else {
-                            Text("Price N/A", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     
+                    Text(
+                        text = "Used: ${item.priceUsed?.let { currencyFormatter.format(it) } ?: "N/A"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+
                     if (item.savings > 0) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Surface(
-                            color = Color(0xFFE8F5E9),
-                            contentColor = Color(0xFF2E7D32),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = "-${"%.0f".format(item.savings)}%",
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "-${"%.0f".format(item.savings)}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E7D32)
+                        )
                     }
                 }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                )
             }
-            
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-            
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                IconButton(onClick = {
-                    val sendIntent: Intent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, "Check out this deal on PricePulse: ${item.title}\n${item.url}")
-                        type = "text/plain"
-                    }
-                    val shareIntent = Intent.createChooser(sendIntent, null)
-                    context.startActivity(shareIntent)
-                }) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onImageClick) {
-                    Icon(Icons.Default.ShoppingCart, contentDescription = "Buy Now", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

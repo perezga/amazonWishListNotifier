@@ -1,14 +1,22 @@
 package com.example.amazonwishlist.ui
 
+import android.content.Intent
 import android.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import coil.compose.AsyncImage
 import com.example.amazonwishlist.data.PriceHistory
 import com.example.amazonwishlist.data.WishlistApi
 import com.example.amazonwishlist.data.WishlistItem
@@ -19,6 +27,7 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -30,6 +39,7 @@ fun ItemDetailScreen(itemId: String, onBack: () -> Unit) {
     var history by remember { mutableStateOf<List<PriceHistory>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("es", "ES")) }
 
     LaunchedEffect(itemId) {
         scope.launch {
@@ -66,14 +76,63 @@ fun ItemDetailScreen(itemId: String, onBack: () -> Unit) {
             } else if (errorMessage != null) {
                 Text(text = "Error: $errorMessage", color = MaterialTheme.colorScheme.error)
             } else if (item != null) {
-                Text(text = item!!.title, style = MaterialTheme.typography.headlineSmall)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "Current Price: ${item!!.price ?: "N/A"}€", style = MaterialTheme.typography.titleMedium)
-                Text(text = "Current Used Price: ${item!!.priceUsed ?: "N/A"}€", style = MaterialTheme.typography.titleMedium)
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    AsyncImage(
+                        model = item!!.imageURL,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(120.dp)
+                            .padding(8.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = item!!.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "New Price: ${item!!.price?.let { currencyFormatter.format(it) } ?: "N/A"}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Used Price: ${item!!.priceUsed?.let { currencyFormatter.format(it) } ?: "N/A"}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(text = "Price History", style = MaterialTheme.typography.titleLarge)
-                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    val context = LocalContext.current
+                    val uriHandler = LocalUriHandler.current
+                    
+                    Button(onClick = { uriHandler.openUri(item!!.url) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Buy Now")
+                    }
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
+                    OutlinedButton(onClick = {
+                        val sendIntent: Intent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, "Check out this deal on PricePulse: ${item!!.title}\n${item!!.url}")
+                            type = "text/plain"
+                        }
+                        val shareIntent = Intent.createChooser(sendIntent, null)
+                        context.startActivity(shareIntent)
+                    }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.Share, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Share")
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                Text(text = "Price History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 PriceHistoryGraph(history)
             }

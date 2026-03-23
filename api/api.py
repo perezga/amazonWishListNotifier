@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from models import SessionLocal, Item, PriceHistory, Notification, Wishlist, Setting
+from api.models import SessionLocal, Item, PriceHistory, Notification, Wishlist, Setting
 from sqlalchemy.orm import joinedload
 from pydantic import BaseModel
 

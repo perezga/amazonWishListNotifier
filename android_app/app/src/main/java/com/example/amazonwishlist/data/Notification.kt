@@ -1,11 +1,13 @@
 package com.example.amazonwishlist.data
 
+import com.squareup.moshi.Json
+
 data class Notification(
-    val id: Int,
-    val item_id: String,
-    val title: String,
-    val message: String,
-    val price: Float,
-    val timestamp: String,
-    val is_read: Int
+    @Json(name = "id") val id: Int,
+    @Json(name = "item_id") val itemId: String,
+    @Json(name = "title") val title: String,
+    @Json(name = "message") val message: String,
+    @Json(name = "price") val price: Float,
+    @Json(name = "timestamp") val timestamp: String,
+    @Json(name = "is_read") val isRead: Int
 )

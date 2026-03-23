@@ -37,7 +37,7 @@ fun SettingsScreen(
                 val settings = WishlistApi.retrofitService.getSettings()
                 minSavings = settings["min_savings_percentage"] ?: "0.10"
             } catch (e: Exception) {
-                // Handle error
+                e.printStackTrace()
             } finally {
                 isLoading = false
             }
@@ -47,6 +47,7 @@ fun SettingsScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+            @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
                 title = { Text("Settings", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
@@ -131,6 +132,7 @@ fun SettingsScreen(
                                         WishlistApi.retrofitService.updateSettings(mapOf("min_savings_percentage" to minSavings))
                                         snackbarHostState.showSnackbar("Settings saved successfully")
                                     } catch (e: Exception) {
+                                        e.printStackTrace()
                                         snackbarHostState.showSnackbar("Error saving settings")
                                     } finally {
                                         isSaving = false

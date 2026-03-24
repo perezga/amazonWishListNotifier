@@ -95,7 +95,6 @@ def delete_wishlist(wishlist_id: int):
         if not wishlist:
             raise HTTPException(status_code=404, detail="Wishlist not found")
         
-        session.query(Item).filter(Item.wishlist_id == wishlist_id).delete()
         session.delete(wishlist)
         session.commit()
         return {"status": "success"}

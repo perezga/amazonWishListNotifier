@@ -72,12 +72,21 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        # Obtain a session-level advisory lock to prevent race conditions
+        # during concurrent migration runs (e.g., when multiple containers start).
+        from sqlalchemy import text
+        connection.execute(text("SELECT pg_advisory_lock(123456789)"))
+        connection.commit()
+        try:
+            context.configure(
+                connection=connection, target_metadata=target_metadata
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            connection.execute(text("SELECT pg_advisory_unlock(123456789)"))
+            connection.commit()
 
 
 if context.is_offline_mode():

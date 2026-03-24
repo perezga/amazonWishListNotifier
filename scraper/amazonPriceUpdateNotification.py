@@ -167,7 +167,7 @@ def cleanupRemovedItems(items):
             if not findItem(items, itemId):
                 print(f"Removing {wishItem['title'][:50]} (ID: {itemId}) from database and memory.")
                 
-                # 1. Delete from DB (cascades to PriceHistory)
+                # 1. Delete from DB (cascades to PriceHistory and Notifications)
                 db_item = session.query(Item).filter(Item.id == itemId).first()
                 if db_item:
                     session.delete(db_item)
@@ -247,6 +247,8 @@ def scrape_wishlist_page(wishlist_mapping):
     notification_list = []
     scrappedItems = []
     base_url = "https://www.amazon.es"
+    
+    print(f"Scraping detailed info for {sum(len(v['items']) for v in wishlist_mapping.values())} items...")
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -571,19 +573,33 @@ def scrape_wishlists(urls=None):
         session.close()
 
     all_urls = list(set(urls + db_urls))
+    print(f"Scraping {len(all_urls)} URLs: {all_urls}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         # Use a random user agent for the browser context
-        context = browser.new_context(user_agent=random.choice(USER_AGENTS))
+        context = browser.new_context(user_agent=random.choice(USER_AGENTS), viewport={'width': 1920, 'height': 1080})
         page = context.new_page()
 
+        # Stealth: Visit homepage first to set cookies
+        print("Visiting Amazon homepage for cookies...")
+        try:
+            page.goto("https://www.amazon.es/", wait_until="load", timeout=60000)
+            time.sleep(random.uniform(3.0, 5.0))
+        except Exception as e:
+            print(f"Error visiting homepage: {e}")
+
         for url in all_urls:
+            print(f"Loading wishlist URL: {url}")
             try:
                 # Add a small random jitter delay between wishlist scrapes
                 time.sleep(random.uniform(2.0, 5.0))
                 
                 page.goto(url, wait_until="load", timeout=60000)
+                print(f"Page loaded for {url}")
+                # Wait a bit for JS to execute
+                time.sleep(2)
+                
                 html_text = page.content()
                 soup = BeautifulSoup(html_text, "html.parser")
                 
@@ -597,6 +613,8 @@ def scrape_wishlists(urls=None):
                 list_items = soup.find_all(attrs={"data-itemid": True})
                 if not list_items:
                     list_items = soup.find_all(lambda tag: tag.name in ["div", "li"] and tag.has_attr("id") and tag["id"].startswith("item_") and "itemName_" not in tag["id"])
+                
+                print(f"Found {len(list_items)} items in wishlist: {wishlist_name}")
                 
                 wishlist_mapping[url] = {
                     "name": wishlist_name,
@@ -620,10 +638,17 @@ if __name__ == "__main__":
     sendTelegram("Amazon Notification service RESTARTING")
 
     print("Scraping wishlist...")
-    wishlist_mapping = scrape_wishlists(wishlistURLs)
+    try:
+        wishlist_mapping = scrape_wishlists(wishlistURLs)
+    except Exception as e:
+        print(f"CRITICAL ERROR in initial scrape_wishlists: {e}")
+        import traceback
+        traceback.print_exc()
+        wishlist_mapping = {}
         
     # The main function now accepts an 'iteration_count'
     def main(sc, wishlist_mapping, iteration_count):
+        print(f"Entering main iteration {iteration_count}...")
         
         # Every 10 iterations, re-scrape the main wishlist URLs to find new or removed items
         if iteration_count > 0 and iteration_count % 10 == 0:

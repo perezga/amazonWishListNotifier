@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: wishlist
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=wishlist
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -41,6 +41,16 @@ services:
       - db
     restart: unless-stopped
     command: uvicorn api.api:app --host 0.0.0.0 --port 8010
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   postgres_data:

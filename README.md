@@ -58,13 +58,13 @@ graph TD
 
 ## 🚀 Features
 
-### 📱 Android App (PricePulse)
+### 📱 Android & 🌐 Web App (PricePulse)
 - **Visual Dashboards:** Group items by wishlist with collapsible sections and intuitive navigation.
 - **In-App Notifications:** Real-time synchronization of price drop alerts.
-- **Price History:** Interactive charts visualize price trends over time (New vs. Used).
+- **Price History:** Interactive Recharts (Web) and MPAndroidChart (Mobile) visualize price trends over time.
 - **Wishlist Management:** Add, delete, and manage multiple Amazon wishlist URLs directly from the UI.
 - **Global Settings:** Configure notification thresholds (e.g., minimum savings percentage) from the app.
-- **Modern UI:** Built with Jetpack Compose, Material 3, and support for Dynamic Color (Android 12+).
+- **Modern UI:** Built with React/Tailwind (Web) and Jetpack Compose (Mobile).
 - **Deep Linking:** Tap images or headers to jump directly to the Amazon product page.
 
 ### 🕵️ Stealth Scraper
@@ -97,11 +97,14 @@ Settings can be managed via `amazonPriceUpdateNotifier.properties` or Environmen
 ### 2. Running the System
 
 #### Using Docker (Recommended)
-1. Launch the stack (Database, API, Scraper, Migrations):
+1. Launch the stack (Database, API, Scraper, Web, Migrations):
    ```bash
-   docker-compose up --build -d
+   docker-compose -f docker/docker-compose.yml up --build -d
    ```
-2. The system automatically runs Alembic migrations on startup via `entrypoint.sh`.
+2. The services will be accessible at:
+   - **Web App:** http://localhost:8080
+   - **API:** http://localhost:8010
+3. The system automatically runs Alembic migrations on startup via `entrypoint.sh`.
 
 #### Manual Execution
 1. Install dependencies: `pip install -r requirements.txt`

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { api, Settings } from '../api/client';
+import { api } from '../api/client';
+import type { Settings } from '../api/client';
 import { 
   Save, 
   Percent, 

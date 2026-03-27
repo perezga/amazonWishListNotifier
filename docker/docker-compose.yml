@@ -1,6 +1,8 @@
 services:
   db:
     image: postgres:16-alpine
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     environment:
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
@@ -15,6 +17,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     volumes:
       - ../scraper/amazonPriceUpdateNotifier.properties:/app/scraper/amazonPriceUpdateNotifier.properties
     environment:
@@ -32,6 +36,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     ports:
       - "8010:8010"
     environment:
@@ -46,8 +52,10 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     ports:
-      - "8080:80"
+      - "8083:80"
     depends_on:
       - api
     restart: unless-stopped

@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { api, WishlistItem, PriceHistory } from '../api/client';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { api } from '../api/client';
+import type { WishlistItem, PriceHistory } from '../api/client';
 import { 
   ShoppingCart, 
   Share2, 
-  ChevronLeft, 
   TrendingDown, 
-  TrendingUp,
-  ExternalLink,
   Calendar
 } from 'lucide-react';
 import { 
@@ -24,7 +22,6 @@ import { format, parseISO } from 'date-fns';
 
 const ItemDetailPage = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [item, setItem] = useState<WishlistItem | null>(null);
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);

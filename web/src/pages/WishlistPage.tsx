@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { api, WishlistItem } from '../api/client';
+import { useState, useEffect, useMemo } from 'react';
+import { api } from '../api/client';
+import type { WishlistItem } from '../api/client';
 import { 
   RefreshCw, 
   SortAsc, 
@@ -180,7 +181,7 @@ const WishlistPage = () => {
                 {expandedWishlists[name] ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">{name}</h3>
-                  <p className="text-xs text-gray-500">{wishlistItems.size} items</p>
+                  <p className="text-xs text-gray-500">{wishlistItems.length} items</p>
                 </div>
               </div>
               <a 

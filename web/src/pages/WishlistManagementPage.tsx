@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { api, Wishlist } from '../api/client';
+import { api } from '../api/client';
+import type { Wishlist } from '../api/client';
 import { 
-  Plus, 
   Trash2, 
   ExternalLink, 
   Link as LinkIcon,

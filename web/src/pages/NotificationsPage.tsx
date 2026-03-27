@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { api, Notification } from '../api/client';
+import { useState, useEffect } from 'react';
+import { api } from '../api/client';
+import type { Notification } from '../api/client';
 import { 
   Bell, 
   Clock, 
-  Trash2, 
-  CheckCircle,
   Tag,
   ChevronRight,
   Loader2
